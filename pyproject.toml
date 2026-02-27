@@ -23,12 +23,16 @@ dev = [
     "ruff>=0.4",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["bot", "core", "services", "repositories", "clients", "scheduler", "db"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
+ignore = ["N818"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

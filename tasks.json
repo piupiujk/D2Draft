@@ -1,0 +1,851 @@
+{
+  "project": "D2Draft — Dota 2 Assistant Telegram Bot",
+  "prd_version": "1.0",
+  "created_at": "2026-02-27",
+
+  "agent_instructions": {
+    "before_start": [
+      "Прочитай этот файл и git log --oneline -20",
+      "Выбери ОДНУ задачу со статусом pending и наивысшим приоритетом",
+      "Проверь, что все dependencies этой задачи имеют статус done"
+    ],
+    "during_work": [
+      "Работай только над выбранной задачей",
+      "Делай коммиты после каждого логического изменения",
+      "Не трогай код, не связанный с текущей задачей"
+    ],
+    "before_finish": [
+      "Выполни ВСЕ test_steps из задачи",
+      "Меняй status на done ТОЛЬКО после успешного прохождения всех тестов",
+      "Напиши summary в progress.md",
+      "ЗАПРЕЩЕНО удалять или редактировать задачи — только менять status"
+    ]
+  },
+
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Инициализация проекта: pyproject.toml, структура папок, базовые зависимости",
+      "acceptance_criteria": [
+        "Создан pyproject.toml с зависимостями: aiogram>=3.4, supabase, httpx, apscheduler, pydantic-settings, python-dotenv",
+        "Создана структура папок: bot/ (handlers/, states/, keyboards/, middlewares/, filters/), services/, repositories/, clients/, scheduler/jobs/, db/migrations/, core/, prompts/, tests/",
+        "Все __init__.py созданы",
+        "Создан .env.example с перечнем всех переменных окружения",
+        "Создан bot/config.py с Pydantic Settings (BOT_TOKEN, SUPABASE_URL, SUPABASE_KEY, STRATZ_TOKEN, OPENDOTA_BASE_URL, LLM_API_KEY, LLM_PROVIDER, REDIS_URL)",
+        "Создан bot/__main__.py с минимальным запуском бота (dispatcher + polling)",
+        "pip install -e . или pip install . проходит без ошибок"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить pip install -e . — установка проходит без ошибок",
+        "Шаг 2: Проверить что python -m bot выдаёт ошибку о недостающем BOT_TOKEN (а не import error)",
+        "Шаг 3: Проверить наличие всех директорий и __init__.py"
+      ],
+      "dependencies": [],
+      "status": "done"
+    },
+  {
+      "id": "TASK-002",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Настройка Supabase клиента и SQL-миграции для всех таблиц",
+      "acceptance_criteria": [
+        "Создан db/supabase.py с инициализацией async Supabase клиента (singleton)",
+        "Миграция 001_create_users.sql: таблица users со всеми полями из PRD (telegram_id BIGINT UNIQUE, steam_id VARCHAR UNIQUE, username, current_mmr, mmr_updated_at, main_role, is_premium, premium_expires_at, notifications_enabled, weekly_report_day, created_at, updated_at)",
+        "Миграция 002_create_mmr_history.sql: таблица mmr_history с FK на users",
+        "Миграция 003_create_match_analyses.sql: таблица match_analyses с JSONB stats",
+        "Миграция 004_create_draft_analyses.sql: таблица draft_analyses с INTEGER[] массивами",
+        "Миграция 005_create_subscriptions.sql: таблица subscriptions со статусами",
+        "RLS policies: пользователь видит только свои данные"
+      ],
+      "test_steps": [
+        "Шаг 1: Применить все миграции к тестовой БД Supabase",
+        "Шаг 2: Проверить что все таблицы созданы с правильными типами полей",
+        "Шаг 3: Проверить что RLS включён и policies работают"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-003",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Core-модули: константы героев Dota 2, маппинг имён (EN/RU), enum-ы ролей и рангов",
+      "acceptance_criteria": [
+        "core/constants.py содержит полный список героев Dota 2 с ID (актуальный патч)",
+        "core/hero_mapping.py: двусторонний маппинг hero_id <-> name_en, hero_id <-> name_ru",
+        "Поиск героя нечувствителен к регистру",
+        "Поддержка популярных сокращений (AM -> Anti-Mage, Антимаг -> Anti-Mage)",
+        "core/enums.py: Role (1-5), RankBracket, SubscriptionPlan, MatchOutcome",
+        "core/exceptions.py: SteamProfileClosed, APIRateLimited, HeroNotFound, UserNotRegistered"
+      ],
+      "test_steps": [
+        "Шаг 1: Импортировать hero_mapping и проверить поиск 'Anti-Mage', 'Антимаг', 'am' — все возвращают одинаковый hero_id",
+        "Шаг 2: Проверить что все 124+ героев присутствуют в маппинге",
+        "Шаг 3: Проверить что enum Role содержит значения 1-5 с человекочитаемыми именами"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "done"
+    },
+    {
+      "id": "TASK-004",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Базовые репозитории: user repo с CRUD операциями",
+      "acceptance_criteria": [
+        "repositories/base.py: базовый класс с ссылкой на Supabase клиент",
+        "repositories/user.py: методы get_by_telegram_id(), get_by_steam_id(), create(), update(), update_mmr()",
+        "Все методы async",
+        "Обработка ошибок: дублирование telegram_id/steam_id возвращает понятную ошибку"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать тестового пользователя через user_repo.create()",
+        "Шаг 2: Получить его через get_by_telegram_id() — данные совпадают",
+        "Шаг 3: Обновить MMR через update_mmr() — значение изменилось",
+        "Шаг 4: Попытка создать дубликат — получить ошибку, не crash"
+      ],
+      "dependencies": ["TASK-002"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-005",
+      "category": "infrastructure",
+      "priority": "high",
+      "description": "Репозитории: mmr_history, match_analyses, draft_analyses, subscriptions",
+      "acceptance_criteria": [
+        "repositories/mmr_history.py: insert(), get_history(user_id, days=30)",
+        "repositories/match_analysis.py: insert(), get_by_match_id(), get_latest(user_id)",
+        "repositories/draft_analysis.py: insert(), get_latest(user_id, limit=5)",
+        "repositories/subscription.py: create(), get_active(user_id), deactivate()",
+        "Все методы async с обработкой ошибок"
+      ],
+      "test_steps": [
+        "Шаг 1: Вставить запись в mmr_history и получить историю за 30 дней",
+        "Шаг 2: Вставить match_analysis и получить его по match_id",
+        "Шаг 3: Создать подписку, проверить get_active, затем deactivate — статус изменился"
+      ],
+      "dependencies": ["TASK-004"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-006",
+      "category": "integration",
+      "priority": "critical",
+      "description": "HTTP-клиент OpenDota API: профиль игрока, последний матч, статистика героев",
+      "acceptance_criteria": [
+        "clients/opendota.py: async класс OpenDotaClient на базе httpx",
+        "Методы: get_player(account_id), get_recent_matches(account_id, limit), get_player_heroes(account_id), get_match(match_id)",
+        "Rate limiting: не более 60 запросов в минуту",
+        "Retry логика при 429 и 5xx ошибках",
+        "Маппинг ответов в типизированные dataclass/Pydantic модели"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать get_player() с реальным Steam ID — получить валидные данные",
+        "Шаг 2: Вызвать get_recent_matches() — получить список матчей",
+        "Шаг 3: Проверить что при невалидном ID возвращается понятная ошибка"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-007",
+      "category": "integration",
+      "priority": "critical",
+      "description": "HTTP-клиент Stratz API (GraphQL): мета-герои по роли, билды, статистика",
+      "acceptance_criteria": [
+        "clients/stratz.py: async класс StratzClient на базе httpx (GraphQL)",
+        "Методы: get_meta_heroes(role, bracket), get_hero_build(hero_id, role, bracket), get_hero_matchups(hero_id)",
+        "GraphQL запросы оформлены как отдельные строковые константы",
+        "Обработка ошибок GraphQL (errors в ответе)",
+        "Retry при 429 и сетевых ошибках"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать get_meta_heroes(role=1, bracket='DIVINE') — получить список героев с винрейтами",
+        "Шаг 2: Вызвать get_hero_build(hero_id=1) — получить item build и skill build",
+        "Шаг 3: Проверить что невалидный запрос возвращает ошибку, а не crash"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-008",
+      "category": "integration",
+      "priority": "high",
+      "description": "Клиент Steam API: валидация Steam URL/ID, проверка открытости профиля",
+      "acceptance_criteria": [
+        "clients/steam.py: resolve_vanity_url(url) конвертирует steamcommunity.com/id/xxx в Steam ID 64-bit",
+        "Парсинг форматов: числовой Steam ID, steamcommunity.com/id/..., steamcommunity.com/profiles/...",
+        "Проверка открытости профиля через OpenDota API (наличие данных)",
+        "Возврат SteamProfileClosed исключения при закрытом профиле"
+      ],
+      "test_steps": [
+        "Шаг 1: Передать steamcommunity.com/id/nickname — получить числовой Steam ID",
+        "Шаг 2: Передать steamcommunity.com/profiles/76561198xxx — получить тот же формат",
+        "Шаг 3: Передать закрытый профиль — получить SteamProfileClosed"
+      ],
+      "dependencies": ["TASK-006"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-009",
+      "category": "integration",
+      "priority": "high",
+      "description": "Унифицированный LLM-клиент: интерфейс для Vision и текстовых запросов",
+      "acceptance_criteria": [
+        "clients/llm.py: класс LLMClient с единым интерфейсом",
+        "Методы: recognize_draft(image_bytes) -> DraftRecognition, summarize_match(stats_dict) -> str, recommend_picks(draft_context) -> list",
+        "Поддержка GPT-4o-mini и Claude через config (LLM_PROVIDER)",
+        "Промпты загружаются из папки prompts/",
+        "Обработка ошибок API, таймаутов"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать LLMClient с тестовым API ключом",
+        "Шаг 2: Вызвать summarize_match() с тестовыми данными — получить текстовый ответ",
+        "Шаг 3: Проверить что при смене LLM_PROVIDER клиент переключается корректно"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-010",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Middleware: загрузка пользователя из БД (auth), проверка подписки, throttling",
+      "acceptance_criteria": [
+        "bot/middlewares/auth.py: загружает пользователя по telegram_id, инжектит в data['user']",
+        "Если пользователь не найден — data['user'] = None (хендлер решает что делать)",
+        "bot/middlewares/subscription.py: проверяет is_premium и premium_expires_at",
+        "bot/middlewares/throttle.py: rate limit по telegram_id (in-memory dict с TTL)",
+        "Middleware зарегистрированы в __main__.py"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить сообщение от зарегистрированного пользователя — data['user'] заполнен",
+        "Шаг 2: Отправить сообщение от незарегистрированного — data['user'] is None",
+        "Шаг 3: Отправить 10 сообщений подряд — throttle блокирует после лимита"
+      ],
+      "dependencies": ["TASK-004"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-011",
+      "category": "ui",
+      "priority": "critical",
+      "description": "Клавиатуры: главное меню (reply), выбор ролей (inline), общие кнопки",
+      "acceptance_criteria": [
+        "bot/keyboards/menu.py: reply-клавиатура 3x2 (Анализ драфта, Герои меты, Разбор матча, Билд героя, Мой профиль, Настройки)",
+        "bot/keyboards/roles.py: inline-клавиатура из 5 кнопок (Carry / Mid / Offlane / Soft Support / Hard Support) с callback_data",
+        "bot/keyboards/common.py: кнопки Назад, Отмена, Подтвердить",
+        "bot/keyboards/heroes.py: генерация inline-кнопок из списка героев с пагинацией"
+      ],
+      "test_steps": [
+        "Шаг 1: Импортировать main_menu_kb() — получить ReplyKeyboardMarkup с 6 кнопками",
+        "Шаг 2: Импортировать role_selection_kb() — получить InlineKeyboardMarkup с 5 кнопками",
+        "Шаг 3: Вызвать hero_list_kb(heroes, page=0) — получить первую страницу с кнопкой 'Далее'"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-012",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Онбординг: /start, привязка Steam, ввод MMR и роли, создание профиля",
+      "acceptance_criteria": [
+        "bot/handlers/start.py: команда /start запускает FSM-диалог онбординга",
+        "bot/states/onboarding.py: состояния WaitingSteamId, WaitingMMR, WaitingRole",
+        "Шаг 1: Приветственное сообщение + запрос Steam ID/ссылки",
+        "Шаг 2: Валидация через clients/steam.py + OpenDota. При закрытом профиле — инструкция",
+        "Шаг 3: Подтверждение никнейма из Steam",
+        "Шаг 4: Запрос MMR (число 0-15000)",
+        "Шаг 5: Выбор роли (inline-клавиатура из 5 кнопок)",
+        "Шаг 6: Сохранение в Supabase через user_repo.create()",
+        "Шаг 7: Показ главного меню",
+        "Повторный /start для существующего пользователя — показ главного меню без онбординга"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /start новому пользователю — получить приветствие и запрос Steam ID",
+        "Шаг 2: Отправить валидный Steam ID — получить подтверждение никнейма",
+        "Шаг 3: Подтвердить -> ввести MMR -> выбрать роль -> получить главное меню",
+        "Шаг 4: Отправить /start повторно — сразу главное меню",
+        "Шаг 5: Отправить невалидный Steam ID — получить сообщение об ошибке"
+      ],
+      "dependencies": ["TASK-008", "TASK-010", "TASK-011"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-013",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Сервис мета-героев: получение топ героев по роли и рангу из Stratz",
+      "acceptance_criteria": [
+        "services/meta.py: async функция get_meta_heroes(role, bracket) -> list[MetaHero]",
+        "MetaHero содержит: hero_id, name_ru, winrate, pick_rate, краткое описание почему силён",
+        "Фильтрация по MMR-брекету пользователя",
+        "Обогащение личным винрейтом из OpenDota (если пользователь привязан)",
+        "Кэширование результатов на 1 час (in-memory dict)"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать get_meta_heroes(role=1, bracket='LEGEND') — получить 5-10 героев",
+        "Шаг 2: Проверить что winrate > 0 и имя на русском заполнено",
+        "Шаг 3: Повторный вызов с теми же параметрами — результат из кэша (быстрее)"
+      ],
+      "dependencies": ["TASK-007", "TASK-003"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-014",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Хендлер /meta: выбор роли и вывод списка мета-героев",
+      "acceptance_criteria": [
+        "bot/handlers/meta.py: команда /meta и кнопка 'Герои меты' из главного меню",
+        "Показывает inline-клавиатуру выбора роли",
+        "После выбора роли — список 5-10 героев с: имя, винрейт меты, личный винрейт, пояснение",
+        "Каждый герой — inline-кнопка для перехода к билду",
+        "Ответ в течение 3 секунд",
+        "Для незарегистрированных — предложение пройти /start"
+      ],
+      "test_steps": [
+        "Шаг 1: Нажать 'Герои меты' — получить выбор роли",
+        "Шаг 2: Выбрать 'Carry' — получить список героев с винрейтами",
+        "Шаг 3: Нажать на героя — перейти к его билду",
+        "Шаг 4: Отправить /meta mid — получить героев для мида без доп. шагов"
+      ],
+      "dependencies": ["TASK-013", "TASK-012"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-015",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Сервис билдов: получение item build и skill build героя из Stratz",
+      "acceptance_criteria": [
+        "services/build.py: async функция get_hero_build(hero_id, role, bracket) -> HeroBuild",
+        "HeroBuild содержит: starting_items, core_items (в порядке покупки), situational_items (с пояснением), skill_order (1-18), talents",
+        "Предметы с именами на русском и английском",
+        "Данные из Stratz API, лучший билд по винрейту"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать get_hero_build(hero_id=1, role=1, bracket='LEGEND') — получить полный билд",
+        "Шаг 2: Проверить что starting_items, core_items, skill_order заполнены",
+        "Шаг 3: Проверить что ситуативные предметы содержат пояснения"
+      ],
+      "dependencies": ["TASK-007", "TASK-003"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-016",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Хендлер /build: ввод героя текстом, вывод полного билда",
+      "acceptance_criteria": [
+        "bot/handlers/build.py: команда /build [герой] и кнопка 'Билд героя'",
+        "Если герой не указан — запрос ввода текстом (FSM)",
+        "Поддержка ввода на русском и английском ('Антимаг', 'Anti-Mage', 'am')",
+        "Вывод: стартовые предметы, core items, ситуативные предметы, порядок скиллов, таланты",
+        "Форматирование компактное, с эмодзи для разделения секций",
+        "core/formatting.py: функция format_build(build) -> str"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /build Anti-Mage — получить полный билд",
+        "Шаг 2: Отправить /build Антимаг — тот же результат",
+        "Шаг 3: Нажать 'Билд героя' -> ввести 'am' — получить билд",
+        "Шаг 4: Ввести несуществующего героя — получить сообщение 'Герой не найден'"
+      ],
+      "dependencies": ["TASK-015", "TASK-012"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-017",
+      "category": "functional",
+      "priority": "high",
+      "description": "Сервис анализа матча: базовый разбор с метриками по ролям",
+      "acceptance_criteria": [
+        "services/match_analysis.py: async функция analyze_last_match(steam_id) -> MatchAnalysis",
+        "MatchAnalysis содержит: match_id, hero, role (автоопределение), duration, result, метрики по роли (см. таблицу PRD 3.5)",
+        "Метрики фильтруются по роли: carry видит GPM/XPM, саппорт — варды",
+        "Сравнение каждой метрики с медианой для данного героя/ранга",
+        "Данные из OpenDota API",
+        "Сохранение результата в match_analyses через репозиторий"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать analyze_last_match(steam_id) — получить MatchAnalysis",
+        "Шаг 2: Проверить что роль определена автоматически",
+        "Шаг 3: Проверить что метрики соответствуют роли (нет GPM для hard support)",
+        "Шаг 4: Проверить наличие сравнения с медианой"
+      ],
+      "dependencies": ["TASK-006", "TASK-005", "TASK-003"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-018",
+      "category": "functional",
+      "priority": "high",
+      "description": "Хендлер /lastmatch: вывод разбора последнего матча",
+      "acceptance_criteria": [
+        "bot/handlers/match.py: команда /lastmatch и кнопка 'Разбор матча'",
+        "Вывод: герой, результат (W/L), длительность, метрики по роли, сравнение с медианой",
+        "core/formatting.py: функция format_match_analysis(analysis) -> str",
+        "Для premium: кнопка 'Получить совет от AI' (переход к LLM-разбору)",
+        "Для free: текст о возможности получить AI-совет по подписке"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /lastmatch — получить разбор последнего матча с метриками",
+        "Шаг 2: Проверить что метрики соответствуют роли",
+        "Шаг 3: Для premium — видна кнопка 'Получить совет от AI'",
+        "Шаг 4: Для free — видно сообщение о подписке"
+      ],
+      "dependencies": ["TASK-017", "TASK-012"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-019",
+      "category": "functional",
+      "priority": "high",
+      "description": "Сервис профиля: агрегация статистики пользователя",
+      "acceptance_criteria": [
+        "services/profile.py: async функция get_user_profile(user) -> UserProfile",
+        "UserProfile: current_mmr, rank_medal, overall_winrate, top_5_heroes (с винрейтом и кол-вом игр), winrate_7d, winrate_30d, win_streak/loss_streak",
+        "Динамика MMR: список точек за 30 дней из mmr_history",
+        "Данные из OpenDota + кэш в Supabase"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать get_user_profile(user) — получить заполненный UserProfile",
+        "Шаг 2: Проверить что top_5_heroes содержит до 5 героев с винрейтами",
+        "Шаг 3: Проверить что winrate_7d и winrate_30d — числа от 0 до 100"
+      ],
+      "dependencies": ["TASK-006", "TASK-005"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-020",
+      "category": "functional",
+      "priority": "high",
+      "description": "Хендлер /profile: вывод профиля и статистики пользователя",
+      "acceptance_criteria": [
+        "bot/handlers/profile.py: команда /profile и кнопка 'Мой профиль'",
+        "Компактный вывод: MMR, медаль, винрейт, топ герои, динамика",
+        "Кнопка 'Обновить MMR' (ручное обновление)",
+        "core/formatting.py: функция format_profile(profile) -> str",
+        "Для динамики MMR: текстовое представление тренда (↑ +50 за неделю)"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /profile — получить профиль со статистикой",
+        "Шаг 2: Нажать 'Обновить MMR' — MMR обновляется",
+        "Шаг 3: Проверить что отображаются топ-5 героев"
+      ],
+      "dependencies": ["TASK-019", "TASK-012"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-021",
+      "category": "functional",
+      "priority": "high",
+      "description": "Хендлер /settings: управление уведомлениями, сменой роли, обновлением MMR",
+      "acceptance_criteria": [
+        "bot/handlers/settings.py: команда /settings и кнопка 'Настройки'",
+        "Inline-меню: Включить/выключить уведомления, Сменить основную роль, Обновить MMR вручную, Сменить Steam аккаунт",
+        "FSM для редактирования: states/settings.py",
+        "Изменения сохраняются в Supabase через user_repo.update()"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /settings — получить inline-меню настроек",
+        "Шаг 2: Выключить уведомления — статус изменился",
+        "Шаг 3: Сменить роль — выбор новой роли через inline-кнопки"
+      ],
+      "dependencies": ["TASK-012"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-022",
+      "category": "functional",
+      "priority": "high",
+      "description": "Хендлер /help: справка по командам и функциям бота",
+      "acceptance_criteria": [
+        "bot/handlers/help.py: команда /help",
+        "Вывод списка всех команд с кратким описанием",
+        "Информация о бесплатных и premium функциях",
+        "Компактный формат"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /help — получить список команд",
+        "Шаг 2: Проверить что все 8 команд перечислены"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-023",
+      "category": "functional",
+      "priority": "high",
+      "description": "Обработка текстовых кнопок главного меню: роутинг reply-клавиатуры",
+      "acceptance_criteria": [
+        "bot/handlers/start.py или отдельный router: обработка текстов кнопок главного меню",
+        "Текст 'Анализ драфта' -> запуск draft flow",
+        "Текст 'Герои меты' -> запуск meta flow",
+        "Текст 'Разбор матча' -> запуск match flow",
+        "Текст 'Билд героя' -> запуск build flow",
+        "Текст 'Мой профиль' -> показ профиля",
+        "Текст 'Настройки' -> показ настроек",
+        "Все роуты проверяют что пользователь зарегистрирован"
+      ],
+      "test_steps": [
+        "Шаг 1: Нажать каждую из 6 кнопок — убедиться что вызывается правильный хендлер",
+        "Шаг 2: Отправить текст кнопки без регистрации — получить предложение /start"
+      ],
+      "dependencies": ["TASK-012", "TASK-011"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-024",
+      "category": "functional",
+      "priority": "medium",
+      "description": "LLM-промпты: создание шаблонов для распознавания драфта, рекомендаций, разбора матчей",
+      "acceptance_criteria": [
+        "prompts/draft_recognition.txt: системный промпт с полным списком героев Dota 2 для Vision-распознавания",
+        "prompts/draft_recommendation.txt: промпт для рекомендации пиков с учётом контекста",
+        "prompts/match_summary.txt: промпт для анализа матча с советами по роли",
+        "prompts/build_situational.txt: промпт для ситуативной адаптации билда",
+        "Все промпты на русском, структурированы, с примерами выходного формата"
+      ],
+      "test_steps": [
+        "Шаг 1: Прочитать каждый промпт — он содержит чёткие инструкции",
+        "Шаг 2: Проверить что draft_recognition.txt содержит полный список героев",
+        "Шаг 3: Проверить что формат вывода специфицирован (JSON или структурированный текст)"
+      ],
+      "dependencies": ["TASK-003"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-025",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Сервис распознавания драфта: LLM Vision парсинг скриншота",
+      "acceptance_criteria": [
+        "services/draft.py: async функция recognize_draft(image_bytes) -> DraftRecognition",
+        "DraftRecognition: allies (list[hero_id]), enemies (list[hero_id]), user_role (если видна), confidence",
+        "Использует clients/llm.py с промптом из prompts/draft_recognition.txt",
+        "Обработка edge-cases: бан-фаза, неполный драфт, плохое качество",
+        "При confidence < threshold: возврат флага needs_confirmation"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить скриншот драфта — получить распознанных героев",
+        "Шаг 2: Проверить что герои маппятся на валидные hero_id",
+        "Шаг 3: Отправить размытое фото — получить needs_confirmation=True"
+      ],
+      "dependencies": ["TASK-009", "TASK-024"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-026",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Сервис рекомендации пиков на основе драфта",
+      "acceptance_criteria": [
+        "services/draft.py: async функция recommend_picks(allies, enemies, user_role, bracket, steam_id) -> list[PickRecommendation]",
+        "PickRecommendation: hero_id, name_ru, meta_winrate, personal_winrate, reason (текст)",
+        "Алгоритм учитывает: контрпики (Stratz matchups), синергию, мету, личный винрейт",
+        "Возвращает 3-5 героев, отсортированных по score",
+        "LLM генерирует пояснения (промпт draft_recommendation.txt)"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать recommend_picks с тестовым драфтом — получить 3-5 героев",
+        "Шаг 2: Проверить что каждый герой имеет reason",
+        "Шаг 3: Проверить что рекомендации не включают уже выбранных героев"
+      ],
+      "dependencies": ["TASK-025", "TASK-007", "TASK-006"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-027",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Хендлер /draft: приём скриншота, распознавание, рекомендация пиков (Premium)",
+      "acceptance_criteria": [
+        "bot/handlers/draft.py: команда /draft и кнопка 'Анализ драфта'",
+        "Проверка premium-подписки через middleware",
+        "FSM: states/draft.py — WaitingScreenshot, ConfirmingHeroes",
+        "Шаг 1: Запрос скриншота",
+        "Шаг 2: Приём фото, отправка в services/draft.py",
+        "Шаг 3: Показ распознанных героев с кнопками подтверждения / правки",
+        "Шаг 4: Вывод 3-5 рекомендованных героев с причинами",
+        "Шаг 5: Выбор героя → показ билда",
+        "Ограничение размера изображения: максимум 10MB",
+        "Ответ в течение 10 секунд"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить /draft как premium — получить запрос скриншота",
+        "Шаг 2: Отправить скриншот — получить распознанных героев",
+        "Шаг 3: Подтвердить — получить рекомендации пиков",
+        "Шаг 4: Выбрать героя — получить билд",
+        "Шаг 5: Отправить /draft как free — получить сообщение о подписке"
+      ],
+      "dependencies": ["TASK-026", "TASK-015", "TASK-010"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-028",
+      "category": "functional",
+      "priority": "medium",
+      "description": "LLM-совет по матчу: расширенный разбор для Premium",
+      "acceptance_criteria": [
+        "services/match_analysis.py: async функция get_llm_advice(match_analysis) -> str",
+        "Использует промпт prompts/match_summary.txt",
+        "Совет учитывает: роль, длительность, результат, состав команд, конкретные метрики",
+        "Сохранение в match_analyses.llm_summary",
+        "Кнопка 'Получить совет от AI' в хендлере match.py вызывает эту функцию (только Premium)"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать get_llm_advice() с тестовым MatchAnalysis — получить текстовый совет",
+        "Шаг 2: Проверить что совет релевантен роли (не советует ставить варды carry)",
+        "Шаг 3: Проверить сохранение в БД"
+      ],
+      "dependencies": ["TASK-017", "TASK-009", "TASK-024"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-029",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Ситуативная адаптация билдов под вражеский пик (Premium)",
+      "acceptance_criteria": [
+        "services/build.py: async функция get_situational_build(hero_id, role, bracket, enemy_heroes) -> HeroBuild",
+        "Ситуативные предметы адаптированы: BKB если много контроля, Linken если есть single-target",
+        "Использует LLM с промптом build_situational.txt для пояснений",
+        "Только для Premium пользователей"
+      ],
+      "test_steps": [
+        "Шаг 1: Запросить билд с вражеским пиком из 5 контрольных героев — BKB в рекомендациях",
+        "Шаг 2: Проверить что пояснения к ситуативным предметам осмысленные"
+      ],
+      "dependencies": ["TASK-015", "TASK-009", "TASK-024"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-030",
+      "category": "infrastructure",
+      "priority": "medium",
+      "description": "APScheduler: настройка и джобы (обновление MMR, еженедельный отчёт, мониторинг патчей)",
+      "acceptance_criteria": [
+        "scheduler/setup.py: инициализация AsyncIOScheduler, регистрация всех джобов",
+        "scheduler/jobs/update_mmr.py: ежедневное обновление MMR для всех активных пользователей",
+        "scheduler/jobs/weekly_report.py: еженедельная отправка персональной статистики",
+        "scheduler/jobs/patch_monitor.py: проверка новых патчей через Stratz API",
+        "scheduler/jobs/expire_subscriptions.py: деактивация просроченных подписок",
+        "Планировщик запускается в __main__.py вместе с ботом"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить бота — планировщик стартует, джобы зарегистрированы",
+        "Шаг 2: Вызвать update_mmr вручную — MMR обновлён для тестового пользователя",
+        "Шаг 3: Вызвать expire_subscriptions — просроченная подписка деактивирована"
+      ],
+      "dependencies": ["TASK-004", "TASK-005", "TASK-006"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-031",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Сервис уведомлений: формирование сообщений о патчах и еженедельных отчётов",
+      "acceptance_criteria": [
+        "services/notification.py: compose_patch_alert(patch_data) -> str",
+        "services/notification.py: compose_weekly_report(user, stats) -> str",
+        "Патч-алерт: версия патча, ключевые изменения героев, сдвиги в мете",
+        "Еженедельный отчёт: матчей за неделю, винрейт, изменение MMR, лучший/худший герой, совет",
+        "Отправка через bot.send_message() из scheduler jobs"
+      ],
+      "test_steps": [
+        "Шаг 1: Сгенерировать patch_alert — сообщение содержит версию и изменения",
+        "Шаг 2: Сгенерировать weekly_report — содержит все метрики из PRD",
+        "Шаг 3: Проверить что пользователь с выключенными уведомлениями не получает сообщений"
+      ],
+      "dependencies": ["TASK-019", "TASK-007"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-032",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Система подписок: активация, проверка, деактивация Premium",
+      "acceptance_criteria": [
+        "services/subscription.py: activate_premium(user_id, plan, duration_days), check_premium(user_id) -> bool, deactivate(subscription_id)",
+        "bot/handlers/subscription.py: flow покупки подписки (пока заглушка для оплаты)",
+        "При активации: is_premium = True, premium_expires_at = now + duration",
+        "Middleware проверяет premium статус и expires_at"
+      ],
+      "test_steps": [
+        "Шаг 1: Активировать premium — is_premium = True",
+        "Шаг 2: check_premium() — возвращает True",
+        "Шаг 3: Деактивировать — is_premium = False",
+        "Шаг 4: Попытка доступа к premium-фиче без подписки — блокировка"
+      ],
+      "dependencies": ["TASK-005", "TASK-010"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-033",
+      "category": "infrastructure",
+      "priority": "medium",
+      "description": "Логирование: структурированный логгер без PII",
+      "acceptance_criteria": [
+        "core/logging.py: настройка structlog или стандартного logging",
+        "Формат: JSON или key=value для парсинга",
+        "Маскирование PII: telegram_id и steam_id не логируются в открытом виде (хеш или последние 4 цифры)",
+        "Уровни: DEBUG для API-вызовов, INFO для действий пользователей, ERROR для ошибок",
+        "Логгер используется во всех сервисах и хендлерах"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить действие бота — проверить логи, что telegram_id замаскирован",
+        "Шаг 2: Вызвать ошибку — проверить что в логе есть traceback",
+        "Шаг 3: Проверить что формат логов парсится (JSON valid)"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-034",
+      "category": "security",
+      "priority": "high",
+      "description": "Валидация входных данных: Steam ID, MMR, текстовые запросы",
+      "acceptance_criteria": [
+        "Валидация Steam ID: формат числовой (17 цифр для 64-bit), URL парсинг",
+        "Валидация MMR: число от 0 до 15000",
+        "Валидация имени героя: только буквы, цифры, пробелы, дефисы (защита от injection)",
+        "Ограничение размера изображений: максимум 10MB",
+        "Все валидации в core/ или в states (FSM)",
+        "Информативные сообщения об ошибках на русском"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить невалидный Steam ID (буквы, SQL injection) — отклонено с сообщением",
+        "Шаг 2: Ввести MMR = -100 — отклонено",
+        "Шаг 3: Ввести имя героя со спецсимволами — отклонено",
+        "Шаг 4: Отправить изображение >10MB — отклонено"
+      ],
+      "dependencies": ["TASK-012"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-035",
+      "category": "security",
+      "priority": "high",
+      "description": "Rate limiting на уровне бота: защита от злоупотреблений",
+      "acceptance_criteria": [
+        "bot/middlewares/throttle.py: per-user rate limiting",
+        "Лимиты: 30 сообщений в минуту на пользователя (текст), 5 изображений в минуту",
+        "При превышении: информативное сообщение 'Слишком много запросов, подождите'",
+        "In-memory реализация (dict с TTL), опционально Redis",
+        "Отдельные лимиты для LLM-запросов (premium): 10 в час"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить 31 сообщение за минуту — получить блокировку",
+        "Шаг 2: Подождать минуту — блокировка снята",
+        "Шаг 3: Отправить 6 изображений — блокировка"
+      ],
+      "dependencies": ["TASK-010"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-036",
+      "category": "infrastructure",
+      "priority": "low",
+      "description": "Docker: Dockerfile и docker-compose для деплоя",
+      "acceptance_criteria": [
+        "Dockerfile: multi-stage build, Python 3.11-slim, установка зависимостей, копирование кода",
+        "docker-compose.yml: сервис bot, опционально Redis",
+        "Переменные окружения через .env файл",
+        "Health check в Dockerfile",
+        "Размер образа < 200MB"
+      ],
+      "test_steps": [
+        "Шаг 1: docker build — образ собирается без ошибок",
+        "Шаг 2: docker-compose up — бот запускается",
+        "Шаг 3: Проверить что .env переменные подхватываются"
+      ],
+      "dependencies": ["TASK-001"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-037",
+      "category": "infrastructure",
+      "priority": "low",
+      "description": "Кэширование мета-данных: in-memory кэш с TTL",
+      "acceptance_criteria": [
+        "Простой in-memory кэш (dict с timestamp) в services/ или отдельном модуле",
+        "TTL: мета-герои 1 час, билды 1 час, профиль OpenDota 10 минут",
+        "Автоматический сброс при смене патча (если обнаружен новый патч)",
+        "Метод cache.invalidate_all() для ручного сброса"
+      ],
+      "test_steps": [
+        "Шаг 1: Запросить мета-героев дважды — второй раз из кэша",
+        "Шаг 2: Подождать >1 час (или изменить TTL на 1 сек) — кэш сбросился",
+        "Шаг 3: Вызвать invalidate_all() — все данные сброшены"
+      ],
+      "dependencies": ["TASK-013"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-038",
+      "category": "ui",
+      "priority": "medium",
+      "description": "Форматирование сообщений: все formatter-функции в core/formatting.py",
+      "acceptance_criteria": [
+        "format_meta_heroes(heroes) -> str: список героев с эмодзи, винрейтами",
+        "format_build(build) -> str: полный билд с секциями",
+        "format_match_analysis(analysis) -> str: метрики матча по роли",
+        "format_profile(profile) -> str: компактный профиль",
+        "format_draft_recommendations(recs) -> str: рекомендации пиков",
+        "Все функции используют HTML parse_mode для Telegram",
+        "Компактность: сообщения не превышают 4096 символов (лимит Telegram)"
+      ],
+      "test_steps": [
+        "Шаг 1: Вызвать каждую функцию с тестовыми данными — получить строку",
+        "Шаг 2: Проверить что длина < 4096 символов",
+        "Шаг 3: Проверить что HTML-разметка валидна"
+      ],
+      "dependencies": ["TASK-003"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-039",
+      "category": "infrastructure",
+      "priority": "medium",
+      "description": "Тесты: conftest.py с фикстурами, базовые тесты для сервисов и хендлеров",
+      "acceptance_criteria": [
+        "tests/conftest.py: фикстуры mock_supabase, mock_opendota, mock_stratz, mock_llm, test_user",
+        "tests/services/test_meta.py: тест get_meta_heroes с мок-данными",
+        "tests/services/test_match_analysis.py: тест analyze_last_match с мок-данными",
+        "tests/clients/test_opendota.py: тест парсинга ответов API",
+        "Все тесты проходят с pytest",
+        "pytest добавлен в dev-зависимости pyproject.toml"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить pytest — все тесты проходят",
+        "Шаг 2: Проверить что моки корректно подменяют API-вызовы",
+        "Шаг 3: Проверить coverage > 50% для services/"
+      ],
+      "dependencies": ["TASK-017", "TASK-013"],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-040",
+      "category": "functional",
+      "priority": "low",
+      "description": "Graceful degradation: обработка недоступности API и fallback-сценарии",
+      "acceptance_criteria": [
+        "При недоступности Stratz API: сообщение 'Данные меты временно недоступны'",
+        "При недоступности OpenDota API: сообщение 'Не удалось получить данные матча'",
+        "При ошибке LLM API: fallback на текстовый ввод драфта (без Vision)",
+        "Все ошибки логируются с уровнем ERROR",
+        "Пользователь всегда получает осмысленное сообщение, а не crash"
+      ],
+      "test_steps": [
+        "Шаг 1: Замокать Stratz API на 500 — бот отвечает информативно",
+        "Шаг 2: Замокать OpenDota на timeout — бот отвечает информативно",
+        "Шаг 3: Замокать LLM на ошибку — предложен fallback"
+      ],
+      "dependencies": ["TASK-014", "TASK-018", "TASK-027"],
+      "status": "pending"
+    }
+  ]
+}
