@@ -142,3 +142,34 @@
 - Хелперы `_mock_insert`, `_mock_select_list`, `_mock_select_single`, `_mock_update` упрощают создание моков для Supabase-цепочек
 - Следующие разблокированные задачи: TASK-017 (анализ матча, зависит от 006+005+003), TASK-019 (профиль, зависит от 006+005), TASK-030 (scheduler, зависит от 004+005+006), TASK-032 (подписки, зависит от 005+010)
 - Приоритетные critical задачи с выполненными зависимостями: TASK-006 (OpenDota), TASK-007 (Stratz), TASK-010 (middleware), TASK-011 (клавиатуры)
+
+---
+
+## 2026-02-28 — TASK-006: HTTP-клиент OpenDota API (DONE)
+
+**Что сделано:**
+- `clients/opendota.py` — async класс `OpenDotaClient` на базе httpx:
+  - `get_player(account_id)` — профиль игрока (personaname, steamid, rank_tier, mmr_estimate)
+  - `get_recent_matches(account_id, limit)` — последние матчи с полными метриками (KDA, GPM, XPM, damage, и т.д.)
+  - `get_player_heroes(account_id)` — статистика героев (games, win, winrate)
+  - `get_match(match_id)` — детали матча с составами игроков
+- Типизированные dataclass-модели: `PlayerProfile`, `RecentMatch`, `PlayerHeroStats`, `MatchDetails`
+- Token-bucket rate limiter: не более 60 запросов в минуту (`_RateLimiter`)
+- Retry логика: до 3 попыток при 429, 5xx и сетевых ошибках с экспоненциальным backoff
+- `APIRateLimited` исключение при исчерпании retry на 429
+- Context manager поддержка (`async with OpenDotaClient() as client:`)
+- `tests/test_opendota.py` — 18 тестов: парсинг всех 4 эндпоинтов, is_win/winrate свойства, retry на 500/сетевых ошибках, APIRateLimited на 429, 404 без retry, context manager
+
+**Тест-шаги:**
+- Шаг 1: `get_player()` с мок-данными — валидный PlayerProfile ✅
+- Шаг 2: `get_recent_matches()` — список RecentMatch с метриками ✅
+- Шаг 3: Невалидный ID (404) — HTTPStatusError, 1 вызов без retry ✅
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 97/97 тестов ✅
+
+**Заметки для следующей итерации:**
+- `uv tool run --with httpx pytest` — нужен флаг `--with httpx` т.к. httpx не входит в стандартное окружение pytest
+- OpenDota API использует account_id (32-bit), а не Steam ID 64-bit. Конвертация: `steam_id_64 - 76561197960265728`
+- Модели — dataclass (не Pydantic), чтобы не тянуть лишнюю зависимость для простых DTO
+- Следующие разблокированные задачи: TASK-008 (Steam клиент, зависит от 006), TASK-017 (анализ матча, зависит от 006+005+003), TASK-019 (профиль, зависит от 006+005)
+- Приоритетные critical задачи с выполненными зависимостями: TASK-007 (Stratz), TASK-010 (middleware), TASK-011 (клавиатуры)
