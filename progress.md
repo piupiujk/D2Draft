@@ -46,3 +46,35 @@
 - `uv run` не работает из-за зависимости supabase -> storage3 -> pyiceberg (требует Visual C++ Build Tools). Использовать `uv tool run ruff check .` и `uv tool run pytest` вместо `uv run ruff check .`
 - Правило ruff N818 отключено т.к. имена исключений заданы в PRD без суффикса Error
 - Следующие приоритетные задачи (critical, deps выполнены): TASK-002 (Supabase миграции), TASK-006 (OpenDota клиент), TASK-007 (Stratz клиент), TASK-011 (клавиатуры)
+
+---
+
+## 2026-02-28 — TASK-002: Supabase клиент и SQL-миграции (DONE)
+
+**Что сделано:**
+- `db/supabase.py` — async Supabase клиент (singleton) через `create_async_client`
+- 6 SQL-миграций:
+  - `001_create_users.sql` — таблица users (telegram_id, steam_id, mmr, role, premium, уведомления, updated_at триггер)
+  - `002_create_mmr_history.sql` — история MMR с FK на users
+  - `003_create_match_analyses.sql` — анализы матчей с JSONB stats
+  - `004_create_draft_analyses.sql` — анализы драфтов с INTEGER[] массивами
+  - `005_create_subscriptions.sql` — подписки со статусами (active/expired/cancelled)
+  - `006_enable_rls.sql` — RLS включён на всех 5 таблицах, 6 политик безопасности
+- Исправлен `search_path` в функции `update_updated_at_column` (по рекомендации Supabase Security Advisor)
+- `tests/test_db.py` — 14 тестов: singleton-клиент, наличие миграций, содержимое SQL, RLS-политики
+- Тесты корректно мокают `supabase` и `bot.config` модули для работы без установленных пакетов
+
+**Тест-шаги:**
+- Шаг 1: Все 6 миграций применены к Supabase проекту D2Draft (vsvkfupjkkrvcblklhci) ✅
+- Шаг 2: Все 5 таблиц созданы с правильными типами полей (проверено через list_tables) ✅
+- Шаг 3: RLS включён на всех таблицах, 6 политик подтверждены через pg_policies ✅
+- Security advisors — 0 предупреждений ✅
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run pytest tests/test_db.py tests/test_core.py -v` — 40/40 тестов ✅
+
+**Заметки для следующей итерации:**
+- `uv run` по-прежнему не работает из-за supabase → storage3 → pyiceberg (Visual C++ Build Tools). Использовать `uv tool run`.
+- Тесты для async-кода используют `asyncio.run()` вместо `pytest-asyncio` для совместимости с `uv tool run pytest`
+- Мокирование `sys.modules` в тестах: supabase и bot.config мокаются до импорта db.supabase
+- Следующие разблокированные задачи (critical): TASK-004 (user repo), TASK-006 (OpenDota), TASK-007 (Stratz), TASK-011 (клавиатуры)
+- TASK-004 разблокирован и является следующим по цепочке зависимостей (блокирует TASK-005, TASK-010, TASK-012)

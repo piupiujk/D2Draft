@@ -65,7 +65,7 @@
         "Шаг 3: Проверить что RLS включён и policies работают"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-003",
