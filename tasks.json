@@ -225,7 +225,7 @@
         "Шаг 3: Отправить 10 сообщений подряд — throttle блокирует после лимита"
       ],
       "dependencies": ["TASK-004"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-011",

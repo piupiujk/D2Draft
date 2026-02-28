@@ -209,3 +209,29 @@
 - Для skill build (порядок прокачки скиллов) потребуется отдельный запрос через `heroStats.guide` — это будет реализовано в TASK-015 (сервис билдов)
 - Следующие разблокированные задачи: TASK-013 (мета-сервис, зависит от 007+003), TASK-015 (билд-сервис, зависит от 007+003)
 - Приоритетные critical задачи с выполненными зависимостями: TASK-010 (middleware), TASK-011 (клавиатуры), TASK-013 (мета-сервис), TASK-015 (билд-сервис)
+
+---
+
+## 2026-03-01 — TASK-010: Middleware: auth, subscription, throttle (DONE)
+
+**Что сделано:**
+- `bot/middlewares/auth.py` — AuthMiddleware: загружает пользователя по telegram_id из Supabase через UserRepository, инжектит в data['user']. Если не найден — data['user'] = None. Поддержка DI через конструктор (user_repo). Извлечение telegram_id из Update (message, callback_query, inline_query) и прямых событий.
+- `bot/middlewares/subscription.py` — SubscriptionMiddleware: проверяет is_premium и premium_expires_at, инжектит data['is_premium']. Зависит от AuthMiddleware (ожидает data['user']). Поддержка str и datetime для expires_at, обработка невалидных значений.
+- `bot/middlewares/throttle.py` — ThrottleMiddleware: in-memory rate limiter по telegram_id. Хранит dict {telegram_id: [timestamps]}, отклоняет при превышении лимита. Отправляет предупреждение пользователю. Настраиваемые rate_limit и window_sec.
+- Middleware зарегистрированы в `bot/__main__.py`: throttle → auth → subscription (throttle первым для отсечения спама до запросов в БД).
+- `tests/test_middlewares.py` — 25 тестов: извлечение telegram_id (4), AuthMiddleware (4), SubscriptionMiddleware (11), ThrottleMiddleware (6).
+- Исправлены ошибки сортировки импортов (ruff I001).
+
+**Тест-шаги:**
+- Шаг 1: Зарегистрированный пользователь — data['user'] заполнен ✅ (test_registered_user_loaded)
+- Шаг 2: Незарегистрированный — data['user'] = None ✅ (test_unregistered_user_none)
+- Шаг 3: 3 запроса при лимите 3, 4-й заблокирован ✅ (test_over_limit_blocks)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 156/156 тестов ✅
+
+**Заметки для следующей итерации:**
+- Порядок middleware в outer_middleware: первый зарегистрированный выполняется первым (throttle → auth → subscription)
+- Для тестов aiogram — мокаем sys.modules["aiogram"], sys.modules["aiogram.types"] с классами _BaseMiddleware, _Update, _TelegramObject
+- isinstance-проверки в middleware работают с мок-объектами через `update.__class__ = Update`
+- Следующие разблокированные задачи: TASK-012 (онбординг, зависит от 008+010+011), TASK-032 (подписки, зависит от 005+010), TASK-035 (rate limiting, зависит от 010)
+- Приоритетные critical задачи с выполненными зависимостями: TASK-011 (клавиатуры), TASK-013 (мета-сервис), TASK-015 (билд-сервис)

@@ -4,6 +4,9 @@ import logging
 from aiogram import Bot, Dispatcher
 
 from bot.config import settings
+from bot.middlewares.auth import AuthMiddleware
+from bot.middlewares.subscription import SubscriptionMiddleware
+from bot.middlewares.throttle import ThrottleMiddleware
 
 
 async def main() -> None:
@@ -12,7 +15,13 @@ async def main() -> None:
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher()
 
-    logging.info("Bot starting…")
+    # Порядок middleware: throttle → auth → subscription
+    # (throttle первым, чтобы отсечь спам до запросов в БД)
+    dp.update.outer_middleware(ThrottleMiddleware())
+    dp.update.outer_middleware(AuthMiddleware())
+    dp.update.outer_middleware(SubscriptionMiddleware())
+
+    logging.info("Бот запускается…")
     try:
         await dp.start_polling(bot)
     finally:
