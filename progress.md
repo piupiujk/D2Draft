@@ -258,3 +258,38 @@
 - Моки aiogram в тестах должны включать все типы, используемые другими тестами (BaseMiddleware, TelegramObject, Update), чтобы работать при любом порядке сбора тестов
 - Константы кнопок меню (`BTN_DRAFT`, `BTN_META` и т.д.) экспортируются для использования в роутинге хендлеров (TASK-023)
 - Приоритетные задачи с выполненными зависимостями: TASK-008 (Steam клиент, high), TASK-013 (мета-сервис, critical), TASK-015 (билд-сервис, critical), TASK-012 (онбординг — зависит от 008+010+011, всё кроме 008 done)
+
+---
+
+## 2026-03-01 — TASK-008: Клиент Steam API: валидация Steam URL/ID, проверка открытости профиля (DONE)
+
+**Что сделано:**
+- `clients/steam.py` — класс `SteamClient` для валидации Steam URL/ID и проверки открытости профиля:
+  - `resolve_steam_id(raw_input)` — парсинг и resolve любого формата Steam-ввода в Steam ID 64-bit
+  - `check_profile_open(steam_id_64)` — проверка открытости профиля через OpenDota API, бросает `SteamProfileClosed`
+  - `get_persona_name(steam_id_64)` — получение никнейма из OpenDota
+  - `resolve_and_validate(raw_input)` — полный flow: парсинг → resolve → проверка → никнейм
+- Парсинг форматов: `_parse_steam_input()` поддерживает:
+  - Числовой Steam ID 64-bit (76561198xxxxxxxxx)
+  - Числовой account_id 32-bit (автоконвертация)
+  - URL: `steamcommunity.com/profiles/76561198xxxxxxxxx`
+  - URL: `steamcommunity.com/id/nickname` (с и без https://)
+  - Просто vanity name
+- Вспомогательные функции: `steam_id_64_to_account_id()`, `account_id_to_steam_id_64()`
+- Resolve vanity URL через Steam Web API (`ISteamUser/ResolveVanityURL/v1/`), требует STEAM_API_KEY
+- Context manager поддержка (`async with SteamClient() as client:`)
+- `tests/test_steam.py` — 31 тест: конвертация ID (3), парсинг ввода (11), resolve_steam_id (6), check_profile_open (3), resolve_and_validate (3), get_persona_name (2), context manager (3)
+
+**Тест-шаги:**
+- Шаг 1: `steamcommunity.com/id/dendi` → resolve → числовой Steam ID 64-bit ✅ (test_resolve_vanity_url_success)
+- Шаг 2: `steamcommunity.com/profiles/76561198047104768` → парсинг → тот же формат ✅ (test_resolve_profiles_url)
+- Шаг 3: Закрытый профиль → `SteamProfileClosed` ✅ (test_closed_profile_raises)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 216/216 тестов ✅
+
+**Заметки для следующей итерации:**
+- Для resolve vanity URL нужен STEAM_API_KEY. Без ключа — только числовые Steam ID и URL формата /profiles/
+- Steam ID 64-bit начинается с 7 (76561197...), account_id — до 10 цифр. Разница: `_STEAM_ID_64_BASE = 76561197960265728`
+- `resolve_and_validate()` — рекомендуемый метод для онбординга (TASK-012): парсинг + resolve + проверка + никнейм за минимум запросов
+- TASK-012 (онбординг) теперь полностью разблокирован (зависимости: 008 ✅, 010 ✅, 011 ✅)
+- Приоритетные задачи с выполненными зависимостями: TASK-012 (онбординг, critical), TASK-013 (мета-сервис, critical), TASK-015 (билд-сервис, critical)
