@@ -126,7 +126,7 @@
         "Шаг 3: Создать подписку, проверить get_active, затем deactivate — статус изменился"
       ],
       "dependencies": ["TASK-004"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-006",

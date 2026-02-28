@@ -108,3 +108,37 @@
 - Следующие разблокированные задачи (critical, deps выполнены): TASK-006 (OpenDota клиент), TASK-007 (Stratz клиент), TASK-011 (клавиатуры)
 - TASK-005 (остальные репозитории) теперь разблокирован (зависит от TASK-004)
 - TASK-010 (middleware) теперь разблокирован (зависит от TASK-004)
+
+---
+
+## 2026-02-28 — TASK-005: Репозитории: mmr_history, match_analyses, draft_analyses, subscriptions (DONE)
+
+**Что сделано:**
+- `repositories/mmr_history.py` — класс `MmrHistoryRepository`:
+  - `insert(user_id, mmr)` — добавление записи в историю
+  - `get_history(user_id, days=30)` — получение истории за N дней с фильтрацией по дате
+- `repositories/match_analysis.py` — класс `MatchAnalysisRepository`:
+  - `insert(user_id, match_id, hero_id, role, result, duration_sec, stats, llm_summary)` — вставка анализа матча
+  - `get_by_match_id(user_id, match_id)` — поиск по match_id для конкретного пользователя
+  - `get_latest(user_id, limit=1)` — последние анализы
+- `repositories/draft_analysis.py` — класс `DraftAnalysisRepository`:
+  - `insert(user_id, ally_hero_ids, enemy_hero_ids, recommended_ids, user_role, confidence)` — вставка анализа драфта
+  - `get_latest(user_id, limit=5)` — последние анализы драфтов
+- `repositories/subscription.py` — класс `SubscriptionRepository`:
+  - `create(user_id, plan, expires_at)` — создание подписки со статусом active
+  - `get_active(user_id)` — получение активной подписки
+  - `deactivate(subscription_id)` — деактивация (статус cancelled + cancelled_at)
+- `tests/test_repositories_extra.py` — 21 тест покрывающий все 4 репозитория
+
+**Тест-шаги:**
+- Шаг 1: insert в mmr_history + get_history за 30 дней — ✅ (тесты test_insert_returns_record, test_returns_list_of_records)
+- Шаг 2: insert в match_analyses + get_by_match_id — ✅ (тесты test_insert_returns_record, test_returns_record_when_found)
+- Шаг 3: create подписку + get_active + deactivate — ✅ (тесты test_create_returns_record, test_returns_active_subscription, test_deactivate_sets_cancelled)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run pytest tests/ -v` — 79/79 тестов ✅
+
+**Заметки для следующей итерации:**
+- Все 4 репозитория следуют паттерну BaseRepository с lazy-init Supabase клиента
+- Хелперы `_mock_insert`, `_mock_select_list`, `_mock_select_single`, `_mock_update` упрощают создание моков для Supabase-цепочек
+- Следующие разблокированные задачи: TASK-017 (анализ матча, зависит от 006+005+003), TASK-019 (профиль, зависит от 006+005), TASK-030 (scheduler, зависит от 004+005+006), TASK-032 (подписки, зависит от 005+010)
+- Приоритетные critical задачи с выполненными зависимостями: TASK-006 (OpenDota), TASK-007 (Stratz), TASK-010 (middleware), TASK-011 (клавиатуры)
