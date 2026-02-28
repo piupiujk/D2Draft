@@ -106,7 +106,7 @@
         "Шаг 4: Попытка создать дубликат — получить ошибку, не crash"
       ],
       "dependencies": ["TASK-002"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-005",

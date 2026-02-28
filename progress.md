@@ -78,3 +78,33 @@
 - Мокирование `sys.modules` в тестах: supabase и bot.config мокаются до импорта db.supabase
 - Следующие разблокированные задачи (critical): TASK-004 (user repo), TASK-006 (OpenDota), TASK-007 (Stratz), TASK-011 (клавиатуры)
 - TASK-004 разблокирован и является следующим по цепочке зависимостей (блокирует TASK-005, TASK-010, TASK-012)
+
+---
+
+## 2026-02-28 — TASK-004: Базовые репозитории: user repo с CRUD (DONE)
+
+**Что сделано:**
+- `repositories/base.py` — базовый класс `BaseRepository` с lazy-инициализацией Supabase клиента (поддержка DI через конструктор или singleton через `get_supabase()`)
+- `repositories/user.py` — класс `UserRepository` с полным набором async CRUD-методов:
+  - `get_by_telegram_id(telegram_id)` — поиск пользователя по telegram_id
+  - `get_by_steam_id(steam_id)` — поиск пользователя по steam_id
+  - `create(telegram_id, steam_id, username, current_mmr, main_role)` — создание с проверкой дубликатов
+  - `update(telegram_id, **fields)` — обновление произвольных полей
+  - `update_mmr(telegram_id, new_mmr)` — обновление MMR с фиксацией mmr_updated_at
+- `DuplicateUserError` — кастомное исключение при дублировании telegram_id/steam_id
+- `tests/test_repositories.py` — 18 тестов покрывающих: BaseRepository (инициализация, lazy-init), get_by_telegram_id, get_by_steam_id, create (новый/минимальный/дубликат telegram_id/дубликат steam_id), update (существующий/несуществующий), update_mmr (обновление/несуществующий), DuplicateUserError
+
+**Тест-шаги:**
+- Шаг 1: Создание тестового пользователя через `user_repo.create()` — ✅ (тест test_create_new_user)
+- Шаг 2: Получение через `get_by_telegram_id()` — данные совпадают ✅ (тест test_returns_user_when_found)
+- Шаг 3: Обновление MMR через `update_mmr()` — значение изменилось ✅ (тест test_update_mmr_changes_value)
+- Шаг 4: Попытка создать дубликат — `DuplicateUserError` ✅ (тесты test_create_duplicate_telegram_id_raises, test_create_duplicate_steam_id_raises)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run pytest tests/ -v` — 58/58 тестов ✅
+
+**Заметки для следующей итерации:**
+- Паттерн мокирования: для тестов Supabase-запросов нужно собирать цепочку `.table().select().eq().maybe_single().execute()` из MagicMock + AsyncMock
+- При мокировании `get_supabase` нужно патчить в модуле `repositories.base`, а не `db.supabase` (из-за `from db.supabase import get_supabase`)
+- Следующие разблокированные задачи (critical, deps выполнены): TASK-006 (OpenDota клиент), TASK-007 (Stratz клиент), TASK-011 (клавиатуры)
+- TASK-005 (остальные репозитории) теперь разблокирован (зависит от TASK-004)
+- TASK-010 (middleware) теперь разблокирован (зависит от TASK-004)
