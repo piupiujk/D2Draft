@@ -235,3 +235,26 @@
 - isinstance-проверки в middleware работают с мок-объектами через `update.__class__ = Update`
 - Следующие разблокированные задачи: TASK-012 (онбординг, зависит от 008+010+011), TASK-032 (подписки, зависит от 005+010), TASK-035 (rate limiting, зависит от 010)
 - Приоритетные critical задачи с выполненными зависимостями: TASK-011 (клавиатуры), TASK-013 (мета-сервис), TASK-015 (билд-сервис)
+
+---
+
+## 2026-03-01 — TASK-011: Клавиатуры: главное меню, выбор ролей, общие кнопки, герои с пагинацией (DONE)
+
+**Что сделано:**
+- `bot/keyboards/menu.py` — reply-клавиатура 3x2 главного меню (Анализ драфта, Герои меты, Разбор матча, Билд героя, Мой профиль, Настройки). Константы `BTN_*` и кортеж `ALL_MENU_BUTTONS` для роутинга в хендлерах. `resize_keyboard=True`, `input_field_placeholder`.
+- `bot/keyboards/roles.py` — inline-клавиатура из 5 кнопок (Керри / Мидер / Оффлейнер / Софт-саппорт / Хард-саппорт) с callback_data `role:{1-5}`. Функция `parse_role_callback()` для парсинга.
+- `bot/keyboards/common.py` — общие inline-кнопки: Назад (`common:back`), Отмена (`common:cancel`), Подтвердить (`common:confirm`). Готовые клавиатуры `confirm_cancel_kb()` и `back_kb()`.
+- `bot/keyboards/heroes.py` — генерация inline-кнопок из списка героев с пагинацией. `HeroButton` dataclass, `PAGE_SIZE=8`, кнопки по 2 в ряд, навигация «Назад»/«Далее». Парсеры `parse_hero_callback()` и `parse_hero_page_callback()`. Защита от невалидных страниц (clamping).
+- `tests/test_keyboards.py` — 29 тестов: MainMenu (6), RoleSelection (5), CommonButtons (5), HeroListKb (9), ParseCallbacks (4).
+
+**Тест-шаги:**
+- Шаг 1: `main_menu_kb()` — ReplyKeyboardMarkup с 6 кнопками в 3 рядах по 2 ✅
+- Шаг 2: `role_selection_kb()` — InlineKeyboardMarkup с 5 кнопками (role:1..role:5), тексты на русском ✅
+- Шаг 3: `hero_list_kb(heroes, page=0)` — первая страница с кнопкой «Далее», без «Назад» ✅
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 185/185 тестов ✅
+
+**Заметки для следующей итерации:**
+- Моки aiogram в тестах должны включать все типы, используемые другими тестами (BaseMiddleware, TelegramObject, Update), чтобы работать при любом порядке сбора тестов
+- Константы кнопок меню (`BTN_DRAFT`, `BTN_META` и т.д.) экспортируются для использования в роутинге хендлеров (TASK-023)
+- Приоритетные задачи с выполненными зависимостями: TASK-008 (Steam клиент, high), TASK-013 (мета-сервис, critical), TASK-015 (билд-сервис, critical), TASK-012 (онбординг — зависит от 008+010+011, всё кроме 008 done)

@@ -244,7 +244,7 @@
         "Шаг 3: Вызвать hero_list_kb(heroes, page=0) — получить первую страницу с кнопкой 'Далее'"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-012",
