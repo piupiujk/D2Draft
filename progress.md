@@ -173,3 +173,39 @@
 - Модели — dataclass (не Pydantic), чтобы не тянуть лишнюю зависимость для простых DTO
 - Следующие разблокированные задачи: TASK-008 (Steam клиент, зависит от 006), TASK-017 (анализ матча, зависит от 006+005+003), TASK-019 (профиль, зависит от 006+005)
 - Приоритетные critical задачи с выполненными зависимостями: TASK-007 (Stratz), TASK-010 (middleware), TASK-011 (клавиатуры)
+
+---
+
+## 2026-02-28 — TASK-007: HTTP-клиент Stratz API (GraphQL) (DONE)
+
+**Что сделано:**
+- `clients/stratz.py` — async класс `StratzClient` на базе httpx для Stratz GraphQL API:
+  - `get_meta_heroes(role, bracket)` — мета-герои по роли и ранговому брекету (winWeek, ALL_PICK_RANKED)
+  - `get_hero_build(hero_id, role, bracket)` — item build героя по фазам (starting, early, mid, late)
+  - `get_hero_matchups(hero_id, bracket)` — matchup-данные: синергии (with) и контрпики (vs) с сортировкой по synergy
+- GraphQL запросы оформлены как строковые константы: `QUERY_META_HEROES`, `QUERY_HERO_BUILD`, `QUERY_HERO_MATCHUPS`
+- Типизированные dataclass-модели: `MetaHeroStats`, `ItemPurchase`, `HeroBuildData`, `HeroMatchup`, `HeroMatchupData`
+- Маппинг enum-ов проекта -> Stratz API: `RANK_TO_STRATZ_BRACKET` (сгруппированные брекеты), `ROLE_TO_STRATZ_POSITION`
+- Token-bucket rate limiter: 20 запросов/сек (лимит Stratz API)
+- Retry логика: до 3 попыток при 429, 5xx и сетевых ошибках с экспоненциальным backoff
+- `StratzGraphQLError` — обработка ошибок GraphQL (errors в ответе)
+- `APIRateLimited` при исчерпании retry на 429
+- Авторизация через Bearer token (заголовок Authorization)
+- Context manager поддержка (`async with StratzClient(token) as client:`)
+- `tests/test_stratz.py` — 34 теста: маппинг enum-ов, парсинг мета-героев/билдов/matchups, переменные запроса, Bearer token, пустые ответы, GraphQL ошибки, retry на 500/429/сетевых ошибках, 4xx без retry, context manager
+
+**Тест-шаги:**
+- Шаг 1: `get_meta_heroes(role=1, bracket='DIVINE')` — список MetaHeroStats с heroId, matchCount, winCount ✅
+- Шаг 2: `get_hero_build(hero_id=1)` — HeroBuildData со startingItems, earlyGame, midGame, lateGame ✅
+- Шаг 3: Невалидный запрос (GraphQL error) — StratzGraphQLError, не crash ✅
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 131/131 тестов ✅
+
+**Заметки для следующей итерации:**
+- Stratz API использует сгруппированные брекеты: HERALD_GUARDIAN, CRUSADER_ARCHON, LEGEND_ANCIENT, DIVINE_IMMORTAL (enum RankBracketBasicEnum)
+- Позиции: POSITION_1 через POSITION_5 (enum MatchPlayerPositionType)
+- Endpoint: POST https://api.stratz.com/graphql, авторизация Bearer token
+- Лимиты: 20 req/sec, 250/min, 2000/hour, 10000/day
+- Для skill build (порядок прокачки скиллов) потребуется отдельный запрос через `heroStats.guide` — это будет реализовано в TASK-015 (сервис билдов)
+- Следующие разблокированные задачи: TASK-013 (мета-сервис, зависит от 007+003), TASK-015 (билд-сервис, зависит от 007+003)
+- Приоритетные critical задачи с выполненными зависимостями: TASK-010 (middleware), TASK-011 (клавиатуры), TASK-013 (мета-сервис), TASK-015 (билд-сервис)

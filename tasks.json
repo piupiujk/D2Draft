@@ -166,7 +166,7 @@
         "Шаг 3: Проверить что невалидный запрос возвращает ошибку, а не crash"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-008",
