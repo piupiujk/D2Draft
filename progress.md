@@ -331,3 +331,39 @@
 - Мок `supabase` должен содержать `AsyncClient` и `create_async_client` на верхнем уровне модуля (помимо `supabase._async.client`)
 - Разблокированные задачи: TASK-014 (хендлер /meta), TASK-016 (хендлер /build), TASK-018 (хендлер /lastmatch), TASK-020 (хендлер /profile), TASK-021 (хендлер /settings), TASK-023 (роутинг меню), TASK-034 (валидация)
 - Приоритетные задачи с выполненными зависимостями: TASK-013 (мета-сервис, critical), TASK-015 (билд-сервис, critical), TASK-014 (хендлер /meta, critical — зависит от 013+012)
+
+---
+
+## 2026-03-01 — TASK-013: Сервис мета-героев: топ герои по роли и рангу из Stratz (DONE)
+
+**Что сделано:**
+- `services/meta.py` — async функция `get_meta_heroes(role, bracket, *, stratz, opendota, account_id, top_n)`:
+  - Получение мета-героев из Stratz API по роли и ранговому брекету
+  - Модель `MetaHero`: hero_id, name_ru, name_en, winrate, pick_rate, match_count, personal_winrate, personal_games
+  - Обогащение личным винрейтом из OpenDota (если передан account_id)
+  - In-memory кэш с TTL 1 час (`_cache` dict с timestamp)
+  - Функция `invalidate_meta_cache()` для ручного сброса
+  - Функция `mmr_to_bracket(mmr)` для определения ранга по MMR
+  - Сортировка по винрейту (убывание), ограничение top_n
+  - Пропуск неизвестных hero_id (graceful degradation)
+- `_build_meta_list()` — построение MetaHero из MetaHeroStats с расчётом pick_rate
+- `_enrich_with_personal()` — обогащение личной статистикой из OpenDota
+- `tests/services/test_meta.py` — 28 тестов:
+  - mmr_to_bracket: 8 тестов (все ранги от Herald до Immortal)
+  - _build_meta_list: 8 тестов (сортировка, pick_rate, имена, top_n, пустой ввод, неизвестные ID)
+  - _enrich_with_personal: 3 теста (обогащение, None для отсутствующих, сохранение мета-данных)
+  - get_meta_heroes: 8 тестов (возврат, винрейт, имена на русском, кэширование, разные параметры, обогащение OpenDota, без account_id, top_n)
+  - invalidate_meta_cache: 1 тест
+
+**Тест-шаги:**
+- Шаг 1: `get_meta_heroes(role=1, bracket='LEGEND')` — получить 5-10 героев ✅ (test_returns_meta_heroes)
+- Шаг 2: Проверить что winrate > 0 и имя на русском заполнено ✅ (test_winrate_positive, test_names_in_russian)
+- Шаг 3: Повторный вызов с теми же параметрами — результат из кэша (API вызван 1 раз) ✅ (test_caching_second_call_no_api)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 265/265 тестов ✅
+
+**Заметки для следующей итерации:**
+- Сервис принимает клиенты Stratz/OpenDota через параметры (DI), не создаёт их сам
+- Кэш хранит MetaHero без personal_winrate — личная статистика добавляется при каждом запросе
+- `mmr_to_bracket()` использует приблизительные пороги MMR (Valve не публикует точные)
+- Приоритетные задачи с выполненными зависимостями: TASK-015 (билд-сервис, critical), TASK-014 (хендлер /meta, critical — зависит от 013+012)
