@@ -271,7 +271,7 @@
         "Шаг 5: Отправить невалидный Steam ID — получить сообщение об ошибке"
       ],
       "dependencies": ["TASK-008", "TASK-010", "TASK-011"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-013",

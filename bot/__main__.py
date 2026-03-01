@@ -4,6 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 
 from bot.config import settings
+from bot.handlers.start import router as start_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.subscription import SubscriptionMiddleware
 from bot.middlewares.throttle import ThrottleMiddleware
@@ -14,6 +15,9 @@ async def main() -> None:
 
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher()
+
+    # Роутеры
+    dp.include_router(start_router)
 
     # Порядок middleware: throttle → auth → subscription
     # (throttle первым, чтобы отсечь спам до запросов в БД)

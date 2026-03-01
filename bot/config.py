@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     OPENDOTA_BASE_URL: str = "https://api.opendota.com/api"
     LLM_API_KEY: str = ""
     LLM_PROVIDER: str = "openai"
+    STEAM_API_KEY: str = ""
     REDIS_URL: str = ""
 
 

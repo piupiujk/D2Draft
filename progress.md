@@ -293,3 +293,41 @@
 - `resolve_and_validate()` — рекомендуемый метод для онбординга (TASK-012): парсинг + resolve + проверка + никнейм за минимум запросов
 - TASK-012 (онбординг) теперь полностью разблокирован (зависимости: 008 ✅, 010 ✅, 011 ✅)
 - Приоритетные задачи с выполненными зависимостями: TASK-012 (онбординг, critical), TASK-013 (мета-сервис, critical), TASK-015 (билд-сервис, critical)
+
+---
+
+## 2026-03-01 — TASK-012: Онбординг: /start, привязка Steam, ввод MMR и роли (DONE)
+
+**Что сделано:**
+- `bot/states/onboarding.py` — FSM-состояния онбординга: `waiting_steam_id`, `confirming_nickname`, `waiting_mmr`, `waiting_role`
+- `bot/handlers/start.py` — полный FSM-диалог онбординга через роутер aiogram:
+  - `cmd_start()` — точка входа: если пользователь зарегистрирован → главное меню, иначе → онбординг
+  - `process_steam_id()` — приём Steam ID/URL, валидация через `SteamClient.resolve_and_validate()`, обработка SteamProfileClosed
+  - `confirm_nickname()` / `cancel_nickname()` — подтверждение никнейма из Steam (inline-кнопки)
+  - `process_mmr()` — ввод MMR (валидация 0-15000)
+  - `process_role()` — выбор роли (inline-клавиатура 5 кнопок), создание профиля в Supabase через `UserRepository.create()`
+- Обработка ошибок: закрытый профиль (инструкция как открыть), невалидный Steam ID, дублирование аккаунта, ошибки API/БД
+- `STEAM_API_KEY` добавлен в `bot/config.py` и `.env.example`
+- Роутер `start_router` зарегистрирован в `bot/__main__.py`
+- `tests/test_onboarding.py` — 21 тест покрывающий все шаги онбординга:
+  - cmd_start: существующий пользователь (3 теста), новый пользователь (1 тест)
+  - process_steam_id: валидный ID, закрытый профиль, невалидный ID, пустой текст, ошибка API (5 тестов)
+  - confirm/cancel nickname (2 теста)
+  - process_mmr: валидный, 0, 15000, отрицательный, >15000, нечисловой (6 тестов)
+  - process_role: создание профиля, дубликат, невалидная роль, ошибка БД (4 теста)
+
+**Тест-шаги:**
+- Шаг 1: /start новому пользователю → приветствие + запрос Steam ID ✅ (test_new_user_starts_onboarding)
+- Шаг 2: Валидный Steam ID → подтверждение никнейма ✅ (test_valid_steam_id)
+- Шаг 3: Подтверждение → MMR → роль → главное меню ✅ (test_confirm_asks_mmr, test_valid_mmr, test_valid_role_creates_user)
+- Шаг 4: Повторный /start → сразу главное меню ✅ (test_existing_user_shows_main_menu)
+- Шаг 5: Невалидный Steam ID → сообщение об ошибке ✅ (test_invalid_steam_id)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 237/237 тестов ✅
+
+**Заметки для следующей итерации:**
+- Мок Router должен использовать `_PassthroughDecorator` (возвращает функцию без изменений) вместо MagicMock, чтобы `asyncio.run()` мог вызывать handler-функции
+- Мок `aiogram.types` должен дополнять существующий модуль (`if not hasattr`), а не создавать новый, чтобы работать при любом порядке сбора тестов
+- Мок `supabase` должен содержать `AsyncClient` и `create_async_client` на верхнем уровне модуля (помимо `supabase._async.client`)
+- Разблокированные задачи: TASK-014 (хендлер /meta), TASK-016 (хендлер /build), TASK-018 (хендлер /lastmatch), TASK-020 (хендлер /profile), TASK-021 (хендлер /settings), TASK-023 (роутинг меню), TASK-034 (валидация)
+- Приоритетные задачи с выполненными зависимостями: TASK-013 (мета-сервис, critical), TASK-015 (билд-сервис, critical), TASK-014 (хендлер /meta, critical — зависит от 013+012)
