@@ -313,7 +313,7 @@
         "Шаг 4: Отправить /meta mid — получить героев для мида без доп. шагов"
       ],
       "dependencies": ["TASK-013", "TASK-012"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-015",
