@@ -83,6 +83,45 @@ class HeroBuildData:
 
 
 @dataclass
+class AbilityInfo:
+    """Информация о способности из гайда."""
+
+    ability_id: int
+    slot: int  # 0-3 для обычных, 4+ для талантов
+
+
+@dataclass
+class TalentInfo:
+    """Информация о таланте."""
+
+    ability_id: int
+    slot: int
+    win_count: int = 0
+    match_count: int = 0
+
+    @property
+    def winrate(self) -> float:
+        """Винрейт с этим талантом (0.0 — 1.0)."""
+        return self.win_count / self.match_count if self.match_count > 0 else 0.0
+
+
+@dataclass
+class HeroGuideData:
+    """Данные гайда героя из Stratz API: порядок прокачки и таланты."""
+
+    hero_id: int
+    match_count: int = 0
+    win_count: int = 0
+    ability_order: list[AbilityInfo] = field(default_factory=list)
+    talents: list[TalentInfo] = field(default_factory=list)
+
+    @property
+    def winrate(self) -> float:
+        """Винрейт гайда (0.0 — 1.0)."""
+        return self.win_count / self.match_count if self.match_count > 0 else 0.0
+
+
+@dataclass
 class HeroMatchup:
     """Matchup героя с другим героем."""
 
@@ -168,6 +207,37 @@ query HeroBuild(
           winCount
           time
         }
+      }
+    }
+  }
+}
+"""
+
+QUERY_HERO_GUIDE = """
+query HeroGuide(
+  $heroId: Short!
+  $bracketBasicIds: [RankBracketBasicEnum]
+  $positionId: MatchPlayerPositionType
+) {
+  heroStats {
+    guide(
+      heroId: $heroId
+      bracketBasicIds: $bracketBasicIds
+      positionIds: [$positionId]
+      take: 1
+    ) {
+      heroId
+      matchCount
+      winCount
+      abilityMaxOrder {
+        abilityId
+        slot
+      }
+      talent {
+        abilityId
+        slot
+        winCount
+        matchCount
       }
     }
   }
@@ -341,6 +411,63 @@ class StratzClient:
             early_game=self._parse_items(pattern.get("earlyGame", [])),
             mid_game=self._parse_items(pattern.get("midGame", [])),
             late_game=self._parse_items(pattern.get("lateGame", [])),
+        )
+
+    async def get_hero_guide(
+        self,
+        hero_id: int,
+        role: Role | int | None = None,
+        bracket: RankBracket | str | None = None,
+    ) -> HeroGuideData:
+        """Получить гайд героя: порядок прокачки скиллов и таланты.
+
+        Возвращает HeroGuideData с ability_order и talents.
+        """
+        variables: dict[str, Any] = {"heroId": hero_id}
+        if bracket is not None:
+            stratz_bracket = RANK_TO_STRATZ_BRACKET[RankBracket(bracket)]
+            variables["bracketBasicIds"] = [stratz_bracket]
+        if role is not None:
+            variables["positionId"] = ROLE_TO_STRATZ_POSITION[Role(role)]
+
+        data = await self._query(QUERY_HERO_GUIDE, variables)
+
+        guide_list = (
+            data.get("data", {})
+            .get("heroStats", {})
+            .get("guide", [])
+        )
+        if not guide_list:
+            return HeroGuideData(hero_id=hero_id)
+
+        guide = guide_list[0]
+
+        abilities: list[AbilityInfo] = []
+        for ab in guide.get("abilityMaxOrder") or []:
+            abilities.append(
+                AbilityInfo(
+                    ability_id=ab.get("abilityId", 0),
+                    slot=ab.get("slot", 0),
+                )
+            )
+
+        talents: list[TalentInfo] = []
+        for t in guide.get("talent") or []:
+            talents.append(
+                TalentInfo(
+                    ability_id=t.get("abilityId", 0),
+                    slot=t.get("slot", 0),
+                    win_count=t.get("winCount", 0),
+                    match_count=t.get("matchCount", 0),
+                )
+            )
+
+        return HeroGuideData(
+            hero_id=hero_id,
+            match_count=guide.get("matchCount", 0),
+            win_count=guide.get("winCount", 0),
+            ability_order=abilities,
+            talents=talents,
         )
 
     async def get_hero_matchups(

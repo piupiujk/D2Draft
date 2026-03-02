@@ -408,3 +408,49 @@
 - `_show_meta_heroes()` создаёт StratzClient/OpenDotaClient внутри, а не принимает через DI — это упрощает хендлер, но затрудняет мокирование (нужно патчить классы)
 - `core/formatting.py` создан и может быть расширен для других фич (format_build, format_match_analysis и т.д. — TASK-038)
 - Приоритетные задачи с выполненными зависимостями: TASK-009 (LLM клиент, critical), TASK-015 (сервис билдов, critical), TASK-017 (анализ матча, high)
+
+---
+
+## 2026-03-02 — TASK-015: Сервис билдов: item build и skill build героя из Stratz (DONE)
+
+**Что сделано:**
+- `core/items.py` — маппинг предметов Dota 2 (item_id → ItemData с name_en/name_ru):
+  - 150+ предметов: расходники, базовые, ботинки, основные, крупные, нейтральные
+  - `ITEM_BY_ID` индекс для быстрого поиска
+  - `get_item_name_en(item_id)` / `get_item_name_ru(item_id)` — fallback на "Item #ID" / "Предмет #ID" для неизвестных
+- `clients/stratz.py` — расширен новыми моделями и методом:
+  - Модели: `AbilityInfo`, `TalentInfo`, `HeroGuideData` (ability_order, talents, winrate)
+  - GraphQL запрос `QUERY_HERO_GUIDE` — получение гайда героя (порядок прокачки скиллов и таланты)
+  - Метод `get_hero_guide(hero_id, role, bracket)` → `HeroGuideData`
+- `services/build.py` — async функция `get_hero_build(hero_id, role, bracket, *, stratz)`:
+  - Модель `HeroBuild`: hero_id, name_en/name_ru, starting_items, core_items, situational_items, skill_order, talents, guide_winrate
+  - Модель `BuildItem`: item_id, name_en/name_ru, winrate, match_count, time
+  - Модель `SkillSlot`: ability_id, slot (0-3: Q/W/E/R)
+  - Модель `TalentChoice`: ability_id, slot, winrate, match_count
+  - Получение данных из Stratz API: item build (purchasePattern) + guide (abilityMaxOrder, talent)
+  - core_items = early_game + mid_game (до 6 шт.), situational = остальные + late_game
+  - Дедупликация предметов (по item_id, сохраняя порядок)
+  - In-memory кэш с TTL 1 час, `invalidate_build_cache()`
+- `tests/services/test_build.py` — 34 теста:
+  - _convert_items: 5 тестов (имена, винрейт, время, пустой, неизвестный ID)
+  - _convert_talents: 4 теста (конвертация, сортировка, винрейт, пустой)
+  - _assemble_build: 9 тестов (hero_build, starting, core, situational, дубликаты, скиллы, таланты, guide_winrate, пустые данные)
+  - get_hero_build: 10 тестов (возврат, параметры, кэширование, инвалидация)
+  - invalidate_build_cache: 1 тест
+  - ItemMapping: 5 тестов (EN/RU имена, неизвестные, tango)
+
+**Тест-шаги:**
+- Шаг 1: `get_hero_build(hero_id=1, role=1, bracket='LEGEND')` — получить полный билд ✅ (test_returns_hero_build, test_calls_stratz_with_params)
+- Шаг 2: starting_items, core_items, skill_order заполнены ✅ (test_starting_items_filled, test_core_items_filled, test_skill_order_filled)
+- Шаг 3: situational_items содержат late_game предметы ✅ (test_situational_items_from_late)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 331/331 тестов ✅
+
+**Заметки для следующей итерации:**
+- Stratz API guide запрос: `heroStats.guide` возвращает `abilityMaxOrder` (порядок макса скиллов) и `talent` (выбранные таланты с винрейтами)
+- `get_hero_build()` принимает `stratz` через параметр (DI), не создаёт клиент внутри
+- core_items ограничены 6 штуками (стартовые считаются отдельно) — early + mid game
+- Маппинг предметов `core/items.py` — fallback на "Item #ID" для неизвестных item_id, что обеспечивает graceful degradation
+- Кэш билдов отдельный от кэша мета-героев, TTL тоже 1 час
+- Разблокированные задачи: TASK-016 (хендлер /build, зависит от 015+012)
+- Приоритетные задачи с выполненными зависимостями: TASK-009 (LLM клиент, high), TASK-016 (хендлер /build, critical), TASK-017 (анализ матча, high), TASK-021 (настройки, high), TASK-022 (помощь, high), TASK-023 (роутинг меню, high)
