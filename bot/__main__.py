@@ -7,6 +7,7 @@ from bot.config import settings
 from bot.handlers.build import router as build_router
 from bot.handlers.match import router as match_router
 from bot.handlers.meta import router as meta_router
+from bot.handlers.profile import router as profile_router
 from bot.handlers.start import router as start_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.subscription import SubscriptionMiddleware
@@ -24,6 +25,7 @@ async def main() -> None:
     dp.include_router(meta_router)
     dp.include_router(build_router)
     dp.include_router(match_router)
+    dp.include_router(profile_router)
 
     # Порядок middleware: throttle → auth → subscription
     # (throttle первым, чтобы отсечь спам до запросов в БД)

@@ -416,7 +416,7 @@
         "Шаг 3: Проверить что winrate_7d и winrate_30d — числа от 0 до 100"
       ],
       "dependencies": ["TASK-006", "TASK-005"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-020",
@@ -436,7 +436,7 @@
         "Шаг 3: Проверить что отображаются топ-5 героев"
       ],
       "dependencies": ["TASK-019", "TASK-012"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-021",

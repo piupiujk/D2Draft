@@ -611,3 +611,98 @@
   - TASK-023 (роутинг меню, deps: 012+011 ✅)
   - TASK-034 (валидация, deps: 012 ✅)
   - TASK-035 (rate limiting, deps: 010 ✅)
+
+---
+
+## 2026-03-02 — TASK-019: Сервис профиля: агрегация статистики пользователя (DONE)
+
+**Что сделано:**
+- `services/profile.py` — async функция `get_user_profile(user, *, opendota, mmr_repo)`:
+  - Модель `UserProfile`: current_mmr, rank_bracket, main_role, overall_winrate, top_heroes, winrate_7d, winrate_30d, win_streak, loss_streak, mmr_history, total_matches, personaname
+  - Модель `TopHero`: hero_id, name_ru, name_en, games, winrate
+  - Модель `MmrPoint`: mmr, recorded_at
+  - Общий винрейт из статистики героев OpenDota (`_calc_overall_winrate()`)
+  - Топ-5 героев по кол-ву игр с винрейтами (`_build_top_heroes()`)
+  - Винрейт за 7 и 30 дней из последних 100 матчей (`_calc_recent_winrate()`)
+  - Текущая серия побед/поражений (`_calc_streaks()`)
+  - Динамика MMR из mmr_history репозитория за 30 дней
+  - Ранговый брекет через `mmr_to_bracket()` из сервиса мета
+  - Для пользователей без steam_id — минимальный профиль (без API-запросов)
+- `tests/services/test_profile.py` — 44 теста:
+  - _calc_overall_winrate: 5 тестов (расчёт, пустой, нулевые, тип, диапазон)
+  - _build_top_heroes: 10 тестов (top-5, сортировка, имена RU/EN, винрейт, пустые, лимит, неизвестный герой)
+  - _calc_recent_winrate: 6 тестов (7/30 дней, пустые, нет свежих, все победы/поражения)
+  - _calc_streaks: 6 тестов (серия побед/поражений, пустые, одиночные, чередование)
+  - get_user_profile: 17 тестов (возврат, mmr, ранг, роль, винрейт, топ герои, winrate_7d/30d, серии, всего матчей, никнейм, без steam_id, mmr_history, без repo, без mmr, невалидная роль, account_id)
+
+**Тест-шаги:**
+- Шаг 1: `get_user_profile(user)` — получить заполненный UserProfile ✅ (test_returns_user_profile)
+- Шаг 2: top_heroes содержит до 5 героев с винрейтами ✅ (test_top_heroes_count, test_winrate_calculated)
+- Шаг 3: winrate_7d и winrate_30d — числа от 0 до 100 ✅ (test_winrate_7d, test_winrate_30d)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 493/493 тестов ✅
+
+**Заметки для следующей итерации:**
+- `get_user_profile()` принимает зависимости через параметры (DI): opendota, mmr_repo
+- Для пользователей без steam_id не выполняются API-запросы — возвращается минимальный профиль
+- Серия (streak) считается от самого свежего матча — первый матч определяет тип серии
+- Приоритетные pending задачи с выполненными зависимостями (high):
+  - TASK-020 (хендлер /profile, deps: 019+012 ✅)
+  - TASK-021 (настройки, deps: 012 ✅)
+  - TASK-022 (помощь, deps: 001 ✅)
+  - TASK-023 (роутинг меню, deps: 012+011 ✅)
+  - TASK-034 (валидация, deps: 012 ✅)
+  - TASK-035 (rate limiting, deps: 010 ✅)
+  - TASK-031 (уведомления, deps: 019+007 ✅)
+
+---
+
+## 2026-03-02 — TASK-020: Хендлер /profile: вывод профиля и статистики пользователя (DONE)
+
+**Что сделано:**
+- `core/formatting.py` — функция `format_profile(profile)`:
+  - Заголовок с никнеймом (fallback на «Игрок» если нет)
+  - MMR и ранговая медаль (эмодзи + русское название ранга)
+  - Основная роль на русском
+  - Общая статистика: винрейт, кол-во матчей
+  - Винрейт за 7 и 30 дней
+  - Серия побед/поражений (отображается только если ≥ 2)
+  - Динамика MMR за 30 дней (↑/↓/→ с разницей)
+  - Топ-5 героев с винрейтами и кол-вом игр
+  - Ограничение 4096 символов (лимит Telegram)
+  - HTML parse_mode
+- `bot/handlers/profile.py` — роутер `profile_router` с 3 хендлерами:
+  - `cmd_profile()` — команда `/profile`: вывод профиля
+  - `btn_profile()` — кнопка «Мой профиль» из главного меню
+  - `process_update_mmr()` — callback для кнопки «Обновить MMR»: получение mmr_estimate из OpenDota, обновление через UserRepository, обновление сообщения с новым профилем
+- `_show_profile()` — сообщение загрузки + вывод профиля
+- `_show_profile_edit()` — обновление существующего сообщения (после обновления MMR)
+- `_build_profile_response()` — общая логика: получение профиля из сервиса, форматирование, inline-кнопка «🔄 Обновить MMR»
+- Обработка ошибок: незарегистрированный пользователь → /start, нет Steam → информативное сообщение, ошибка API → fallback текст
+- Роутер `profile_router` зарегистрирован в `bot/__main__.py`
+- `tests/test_profile_handler.py` — 33 теста:
+  - format_profile: 19 тестов (никнейм, MMR, медаль, роль, винрейт общий/7д/30д, матчи, серия побед/поражений, нет серии при 1, топ герои, динамика MMR ↑/↓, HTML, длина, минимальный профиль, fallback никнейм, винрейт героев)
+  - cmd_profile: 2 теста (незарегистрированный, зарегистрированный)
+  - btn_profile: 2 теста (незарегистрированный, зарегистрированный)
+  - process_update_mmr: 5 тестов (незарегистрированный, нет Steam, успешное обновление, ошибка API, нет mmr_estimate)
+  - _show_profile: 1 тест (загрузка + профиль)
+  - _build_profile_response: 4 теста (текст + клавиатура, ошибка API, герои в профиле, HTML)
+
+**Тест-шаги:**
+- Шаг 1: `/profile` → профиль со статистикой ✅ (test_registered_calls_show, test_returns_text_and_keyboard)
+- Шаг 2: Кнопка «Обновить MMR» → MMR обновляется ✅ (test_updates_mmr_successfully)
+- Шаг 3: Топ-5 героев отображаются ✅ (test_profile_contains_heroes, test_contains_top_heroes)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 526/526 тестов ✅
+
+**Заметки для следующей итерации:**
+- `_build_profile_response()` создаёт OpenDotaClient и MmrHistoryRepository внутри
+- Кнопка «Обновить MMR» использует callback_data `update_mmr` (без параметров)
+- При обновлении MMR обновляется и dict user (для немедленного отображения в обновлённом профиле)
+- Приоритетные pending задачи с выполненными зависимостями (high):
+  - TASK-021 (настройки, deps: 012 ✅)
+  - TASK-022 (помощь, deps: 001 ✅)
+  - TASK-023 (роутинг меню, deps: 012+011 ✅)
+  - TASK-034 (валидация, deps: 012 ✅)
+  - TASK-035 (rate limiting, deps: 010 ✅)
+  - TASK-031 (уведомления, deps: 019+007 ✅)

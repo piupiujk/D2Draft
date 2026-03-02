@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from services.build import HeroBuild
     from services.match_analysis import MatchAnalysis
     from services.meta import MetaHero
+    from services.profile import UserProfile
 
 
 def format_meta_heroes(heroes: list[MetaHero], role_label: str) -> str:
@@ -215,3 +216,110 @@ def _format_metric_value(value: float) -> str:
     if value >= 1000:
         return f"{value:,.0f}".replace(",", " ")
     return f"{value:.0f}"
+
+
+# ---------------------------------------------------------------------------
+# format_profile — профиль пользователя
+# ---------------------------------------------------------------------------
+
+# Эмодзи медалей по ранговому брекету
+_RANK_MEDAL: dict[str, str] = {
+    "HERALD": "🥉 Герольд",
+    "GUARDIAN": "🥉 Страж",
+    "CRUSADER": "🥈 Рыцарь",
+    "ARCHON": "🥈 Архонт",
+    "LEGEND": "🥇 Легенда",
+    "ANCIENT": "🥇 Титан",
+    "DIVINE": "🏆 Божество",
+    "IMMORTAL": "👑 Бессмертный",
+}
+
+
+def format_profile(profile: UserProfile) -> str:
+    """Форматировать профиль пользователя для Telegram-сообщения.
+
+    Args:
+        profile: UserProfile из services/profile.py.
+
+    Returns:
+        Строка с HTML-разметкой, длина <= 4096 символов.
+    """
+    lines: list[str] = []
+
+    # Заголовок
+    name = profile.personaname or "Игрок"
+    lines.append(f"👤 <b>Профиль: {name}</b>")
+    lines.append("")
+
+    # MMR и ранг
+    if profile.current_mmr is not None:
+        rank_str = ""
+        if profile.rank_bracket is not None:
+            bracket_name = (
+                profile.rank_bracket.value
+                if hasattr(profile.rank_bracket, "value")
+                else str(profile.rank_bracket)
+            )
+            rank_str = _RANK_MEDAL.get(bracket_name, bracket_name)
+        lines.append(f"🏅 MMR: <b>{profile.current_mmr}</b>")
+        if rank_str:
+            lines.append(f"   Медаль: {rank_str}")
+
+    # Роль
+    if profile.main_role is not None:
+        role_label = (
+            profile.main_role.label_ru
+            if hasattr(profile.main_role, "label_ru")
+            else str(profile.main_role)
+        )
+        lines.append(f"🎯 Роль: {role_label}")
+
+    lines.append("")
+
+    # Общая статистика
+    if profile.overall_winrate is not None:
+        lines.append("📊 <b>Статистика</b>")
+        lines.append(f"   Общий винрейт: <b>{profile.overall_winrate:.1f}%</b>")
+        if profile.total_matches > 0:
+            lines.append(f"   Всего матчей: {profile.total_matches}")
+
+    # Винрейт за период
+    wr_parts: list[str] = []
+    if profile.winrate_7d is not None:
+        wr_parts.append(f"7д: {profile.winrate_7d:.1f}%")
+    if profile.winrate_30d is not None:
+        wr_parts.append(f"30д: {profile.winrate_30d:.1f}%")
+    if wr_parts:
+        lines.append(f"   Винрейт: {' | '.join(wr_parts)}")
+
+    # Серия
+    if profile.win_streak > 1:
+        lines.append(f"   🔥 Серия побед: {profile.win_streak}")
+    elif profile.loss_streak > 1:
+        lines.append(f"   💀 Серия поражений: {profile.loss_streak}")
+
+    # Динамика MMR
+    if profile.mmr_history:
+        lines.append("")
+        lines.append("📈 <b>Динамика MMR</b>")
+        first_mmr = profile.mmr_history[-1].mmr
+        last_mmr = profile.mmr_history[0].mmr
+        diff = last_mmr - first_mmr
+        arrow = "↑" if diff > 0 else "↓" if diff < 0 else "→"
+        sign = "+" if diff > 0 else ""
+        lines.append(f"   {arrow} {sign}{diff} за 30 дней ({first_mmr} → {last_mmr})")
+
+    # Топ герои
+    if profile.top_heroes:
+        lines.append("")
+        lines.append("🦸 <b>Топ герои</b>")
+        for i, h in enumerate(profile.top_heroes, start=1):
+            wr_pct = f"{h.winrate * 100:.1f}%"
+            lines.append(f"   {i}. {h.name_ru} — {wr_pct} ({h.games} игр)")
+
+    result = "\n".join(lines)
+
+    if len(result) > 4096:
+        result = result[:4090] + "\n..."
+
+    return result
