@@ -397,7 +397,7 @@
         "Шаг 4: Для free — видно сообщение о подписке"
       ],
       "dependencies": ["TASK-017", "TASK-012"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-019",

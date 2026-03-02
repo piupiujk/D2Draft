@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from services.build import HeroBuild
+    from services.match_analysis import MatchAnalysis
     from services.meta import MetaHero
 
 
@@ -132,3 +133,85 @@ def format_build(build: HeroBuild) -> str:
         result = result[:4090] + "\n..."
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# format_match_analysis — разбор последнего матча
+# ---------------------------------------------------------------------------
+
+# Маппинг MatchOutcome → эмодзи + текст
+_RESULT_DISPLAY = {
+    "win": ("✅", "Победа"),
+    "loss": ("❌", "Поражение"),
+}
+
+
+def format_match_analysis(analysis: MatchAnalysis) -> str:
+    """Форматировать анализ матча для Telegram-сообщения.
+
+    Args:
+        analysis: MatchAnalysis из services/match_analysis.py.
+
+    Returns:
+        Строка с HTML-разметкой, длина <= 4096 символов.
+    """
+    result_val = (
+        analysis.result.value
+        if hasattr(analysis.result, "value")
+        else str(analysis.result)
+    )
+    emoji, result_text = _RESULT_DISPLAY.get(result_val, ("❓", str(result_val)))
+
+    # Длительность в минутах:секундах
+    minutes = analysis.duration_sec // 60
+    seconds = analysis.duration_sec % 60
+    duration_str = f"{minutes}:{seconds:02d}"
+
+    # Роль
+    role_label = (
+        analysis.role.label_ru
+        if hasattr(analysis.role, "label_ru")
+        else str(analysis.role)
+    )
+
+    lines: list[str] = [
+        f"⚔️ <b>Разбор матча #{analysis.match_id}</b>",
+        "",
+        f"{emoji} <b>{result_text}</b> | {duration_str}",
+        f"🦸 <b>{analysis.hero_name_ru}</b> ({analysis.hero_name_en})",
+        f"🎯 Роль: {role_label}",
+        f"📊 KDA: <b>{analysis.kills}/{analysis.deaths}/{analysis.assists}</b>",
+    ]
+
+    # Метрики по роли
+    if analysis.metrics:
+        lines.append("")
+        lines.append("📈 <b>Метрики</b>")
+        for m in analysis.metrics:
+            val_str = _format_metric_value(m.value)
+            med_str = _format_metric_value(m.median)
+            diff = m.diff
+            # Для deaths — ниже = лучше
+            if m.name == "deaths":
+                arrow = "🟢" if diff <= 0 else "🔴"
+            else:
+                arrow = "🟢" if diff >= 0 else "🔴"
+
+            diff_str = f"+{diff:.0f}" if diff >= 0 else f"{diff:.0f}"
+            lines.append(
+                f"  {arrow} {m.label_ru}: <b>{val_str}</b> (медиана: {med_str}, {diff_str})"
+            )
+
+    result_full = "\n".join(lines)
+
+    if len(result_full) > 4096:
+        result_full = result_full[:4090] + "\n..."
+
+    return result_full
+
+
+def _format_metric_value(value: float) -> str:
+    """Форматировать числовое значение метрики."""
+    if value >= 1000:
+        return f"{value:,.0f}".replace(",", " ")
+    return f"{value:.0f}"
