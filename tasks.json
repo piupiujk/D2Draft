@@ -376,7 +376,7 @@
         "Шаг 4: Проверить наличие сравнения с медианой"
       ],
       "dependencies": ["TASK-006", "TASK-005", "TASK-003"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-018",

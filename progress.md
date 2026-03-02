@@ -504,3 +504,55 @@
   - TASK-023 (роутинг меню, high, deps: 012+011 ✅)
   - TASK-034 (валидация, high, deps: 012 ✅)
   - TASK-035 (rate limiting, high, deps: 010 ✅)
+
+---
+
+## 2026-03-02 — TASK-017: Сервис анализа матча: базовый разбор с метриками по ролям (DONE)
+
+**Что сделано:**
+- `services/match_analysis.py` — async функция `analyze_last_match(steam_id, *, opendota, match_repo, user_id, user_role)`:
+  - Модель `MatchAnalysis`: match_id, hero_id, hero_name_ru/en, role, role_detected, duration_sec, result, kills/deaths/assists, metrics, player_stats
+  - Модель `RoleMetric`: name, label_ru, value, median, unit + свойства diff и diff_pct
+  - Автоопределение роли по `lane_role` + `is_roaming` + `last_hits/min` из OpenDota (`_detect_role()`)
+  - Различение carry/hard support на safe lane по last_hits/min (порог 3 LH/мин)
+  - Различение offlane/soft support на off lane по last_hits/min
+  - Fallback на user_role → CARRY если автоопределение не сработало
+- Метрики фильтруются по роли (`_ROLE_METRICS`):
+  - Carry/Mid: GPM, XPM, ластхиты, урон героям, урон строениям
+  - Offlane: GPM, XPM, урон героям, урон строениям, оглушение
+  - Soft/Hard Support: обсервер/сентри варды, лечение, ассисты, оглушение
+- Сравнение с медианой (`_MEDIAN_VALUES`): приблизительные медианы для Legend ранга
+  - Масштабирование медианы по длительности матча (GPM/XPM не масштабируются)
+- Сохранение результата в match_analyses через `MatchAnalysisRepository.insert()` (если переданы repo + user_id)
+- Конвертация Steam ID 64-bit → account_id 32-bit через `steam_id_64_to_account_id()`
+- `tests/services/test_match_analysis.py` — 47 тестов:
+  - _detect_role: 8 тестов (carry, support, mid, offlane, roaming, no lane_role, unknown)
+  - _determine_result: 4 теста (radiant/dire × win/loss)
+  - _find_player_in_match: 3 теста (найден, не найден, пустой список)
+  - _scale_median_by_duration: 5 тестов (GPM не масштабируется, масштабирование к 60мин/15мин/30мин)
+  - _build_metrics: 6 тестов (carry-метрики, support-метрики, значения, медианы)
+  - RoleMetric: 4 теста (diff, diff_pct, zero median)
+  - analyze_last_match: 17 тестов (возврат, герой, роль, результат, метрики, KDA, ошибки, fallback, сохранение в БД)
+
+**Тест-шаги:**
+- Шаг 1: `analyze_last_match(steam_id)` — получить MatchAnalysis ✅ (test_returns_match_analysis)
+- Шаг 2: Роль определена автоматически (lane_role=1, high CS → CARRY) ✅ (test_role_detected_as_carry)
+- Шаг 3: Carry — метрики GPM/XPM/LH; нет obs_placed ✅ (test_metrics_for_carry, test_carry_no_wards)
+- Шаг 4: Медианы масштабированы по длительности ✅ (test_median_scaled_for_long_match, test_median_comparison_present)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 411/411 тестов ✅
+
+**Заметки для следующей итерации:**
+- Медианы в `_MEDIAN_VALUES` — приблизительные для Legend, в будущем можно брать из API (Stratz/OpenDota)
+- `analyze_last_match()` принимает зависимости через параметры (DI): opendota, match_repo, user_id
+- При моке supabase в тестах необходимо мокать `sys.modules["supabase"]` и `sys.modules["bot.config"]` до импорта сервиса
+- Разблокированные задачи: TASK-018 (хендлер /lastmatch, зависит от 017+012), TASK-028 (LLM-совет, зависит от 017+009+024), TASK-039 (тесты, зависит от 017+013)
+- Приоритетные pending задачи с выполненными зависимостями (high):
+  - TASK-009 (LLM клиент, deps: 001 ✅)
+  - TASK-018 (хендлер /lastmatch, deps: 017+012 ✅)
+  - TASK-019 (профиль, deps: 006+005 ✅)
+  - TASK-021 (настройки, deps: 012 ✅)
+  - TASK-022 (помощь, deps: 001 ✅)
+  - TASK-023 (роутинг меню, deps: 012+011 ✅)
+  - TASK-034 (валидация, deps: 012 ✅)
+  - TASK-035 (rate limiting, deps: 010 ✅)
