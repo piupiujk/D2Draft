@@ -205,7 +205,7 @@
         "Шаг 3: Проверить что при смене LLM_PROVIDER клиент переключается корректно"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-010",

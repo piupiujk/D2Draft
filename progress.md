@@ -808,3 +808,61 @@
   - TASK-031 (уведомления, medium, deps: 019+007 ✅)
   - TASK-030 (scheduler, medium, deps: 004+005+006 ✅)
   - TASK-032 (подписки, medium, deps: 005+010 ✅)
+
+---
+
+## 2026-03-06 — TASK-009: Унифицированный LLM-клиент: интерфейс для Vision и текстовых запросов (DONE)
+
+**Что сделано:**
+- `clients/llm.py` — класс `LLMClient` с единым async-интерфейсом для OpenAI и Anthropic:
+  - `complete(prompt, system, model, max_tokens, temperature)` — текстовый запрос
+  - `vision(image_bytes, prompt, system, model, max_tokens, temperature)` — запрос с изображением (Vision)
+  - `summarize_match(stats_dict)` — генерация текстового разбора матча (промпт из `prompts/match_summary.txt`)
+  - `recommend_picks(draft_context)` — рекомендация пиков (промпт из `prompts/draft_recommendation.txt`)
+  - `recognize_draft(image_bytes)` — распознавание драфта из скриншота через Vision (промпт из `prompts/draft_recognition.txt`)
+- Конфигурация провайдеров `_PROVIDER_CONFIG`: OpenAI (gpt-4o-mini) и Anthropic (claude-sonnet-4)
+- Загрузка промптов из файлов `prompts/*.txt` через `load_prompt(name)` с fallback на встроенные промпты
+- Token-bucket rate limiter (20 запросов/мин)
+- Retry логика: до 3 попыток при 429, 5xx и сетевых ошибках с экспоненциальным backoff
+- `APIRateLimited` при исчерпании retry на 429
+- Context manager поддержка (`async with LLMClient() as client:`)
+- Типизированные модели ответов: `LLMResponse`, `DraftRecognition`, `PickRecommendation`
+- Парсеры ответов: `_parse_draft_recognition()`, `_parse_pick_recommendations()`
+- Исправлены ошибки ruff: E501 (длинная строка), I001 (сортировка импортов), F401 (неиспользуемый импорт tempfile)
+- `tests/clients/test_llm.py` — 45 тестов:
+  - RateLimiter: 1 тест (acquire без блокировки)
+  - load_prompt: 2 теста (отсутствующий/существующий файл)
+  - LLMClient init: 6 тестов (openai/anthropic/case insensitive/unknown/external client/own client)
+  - Context manager: 3 теста (enter/exit own/exit external)
+  - OpenAI complete: 5 тестов (ответ/system/auth/model/без system)
+  - Anthropic complete: 4 теста (ответ/x-api-key/system в body/без system)
+  - OpenAI/Anthropic Vision: 2 теста (base64 image)
+  - Retry: 4 теста (500/429/network error/4xx)
+  - summarize_match: 2 теста (строка/stats в промпте)
+  - recommend_picks: 2 теста (список/плохой формат)
+  - recognize_draft: 1 тест (DraftRecognition)
+  - Парсеры: 11 тестов (draft recognition/pick recommendations)
+  - Provider switching: 2 теста (URL endpoints)
+
+**Тест-шаги:**
+- Шаг 1: Создать LLMClient с тестовым API ключом ✅ (test_creates_with_openai_provider, test_creates_with_anthropic_provider)
+- Шаг 2: summarize_match() с тестовыми данными — текстовый ответ ✅ (test_returns_string, test_sends_stats_in_prompt)
+- Шаг 3: Смена LLM_PROVIDER — корректное переключение ✅ (test_openai_uses_chat_completions_url, test_anthropic_uses_messages_url)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 656/656 тестов ✅
+
+**Заметки для следующей итерации:**
+- Код LLM-клиента и тесты были уже реализованы, потребовалось только исправить ошибки ruff (E501, I001, F401)
+- Промпты (`prompts/*.txt`) ещё не созданы — это TASK-024. LLMClient использует fallback промпты если файлов нет
+- Разблокированные задачи (зависят от TASK-009):
+  - TASK-025 (распознавание драфта, medium, deps: 009+024)
+  - TASK-028 (LLM-совет по матчу, medium, deps: 017+009+024)
+  - TASK-029 (ситуативные билды, medium, deps: 015+009+024)
+- Приоритетные pending задачи с выполненными зависимостями (high):
+  - TASK-034 (валидация, deps: 012 ✅)
+  - TASK-035 (rate limiting, deps: 010 ✅)
+- Приоритетные pending задачи (medium, deps выполнены):
+  - TASK-024 (LLM-промпты, deps: 003 ✅) — блокирует TASK-025, 028, 029
+  - TASK-030 (scheduler, deps: 004+005+006 ✅)
+  - TASK-031 (уведомления, deps: 019+007 ✅)
+  - TASK-032 (подписки, deps: 005+010 ✅)
