@@ -29,8 +29,13 @@ if "aiogram" not in sys.modules:
             self.callback_query = None
             self.inline_query = None
 
+    class _ContentType:
+        PHOTO = "photo"
+        TEXT = "text"
+
     _aiogram_types.TelegramObject = _TelegramObject  # type: ignore[attr-defined]
     _aiogram_types.Update = _Update  # type: ignore[attr-defined]
+    _aiogram_types.ContentType = _ContentType  # type: ignore[attr-defined]
     sys.modules["aiogram.types"] = _aiogram_types
 
 if "supabase" not in sys.modules:
@@ -49,7 +54,11 @@ if "bot.config" not in sys.modules:
 
 from bot.middlewares.auth import AuthMiddleware, _extract_telegram_id  # noqa: E402
 from bot.middlewares.subscription import SubscriptionMiddleware, _check_premium  # noqa: E402
-from bot.middlewares.throttle import ThrottleMiddleware  # noqa: E402
+from bot.middlewares.throttle import (  # noqa: E402
+    ThrottleMiddleware,
+    _llm_bucket,
+    check_llm_limit,
+)
 
 # --- Хелперы для создания мок-событий ---
 
@@ -374,3 +383,111 @@ class TestThrottleMiddleware:
         asyncio.run(middleware(handler, event, {}))
 
         event.message.answer.assert_awaited_once()
+
+    def test_image_limit_separate(self):
+        """Отдельный лимит для изображений (5/мин по умолчанию)."""
+        from aiogram.types import ContentType
+
+        middleware = ThrottleMiddleware(message_limit=30, image_limit=2, image_window=60)
+        handler = AsyncMock(return_value="ok")
+
+        # Создаём событие с фото
+        event = _make_update_with_message(12345)
+        event.message.content_type = ContentType.PHOTO
+        event.message.answer = AsyncMock()
+
+        # 2 фото — проходят
+        asyncio.run(middleware(handler, event, {}))
+        asyncio.run(middleware(handler, event, {}))
+        assert handler.await_count == 2
+
+        # 3-е фото — блокировка
+        result = asyncio.run(middleware(handler, event, {}))
+        assert result is None
+        assert handler.await_count == 2
+
+    def test_image_and_text_limits_independent(self):
+        """Лимиты для текста и изображений независимы."""
+        from aiogram.types import ContentType
+
+        middleware = ThrottleMiddleware(message_limit=2, image_limit=2)
+        handler = AsyncMock(return_value="ok")
+
+        # Текстовые сообщения
+        text_event = _make_update_with_message(12345)
+        text_event.message.content_type = ContentType.TEXT
+
+        # Фото
+        photo_event = _make_update_with_message(12345)
+        photo_event.message.content_type = ContentType.PHOTO
+        photo_event.message.answer = AsyncMock()
+
+        # 2 текста — ок
+        asyncio.run(middleware(handler, text_event, {}))
+        asyncio.run(middleware(handler, text_event, {}))
+        assert handler.await_count == 2
+
+        # 2 фото — ок (независимый лимит)
+        asyncio.run(middleware(handler, photo_event, {}))
+        asyncio.run(middleware(handler, photo_event, {}))
+        assert handler.await_count == 4
+
+    def test_image_throttle_warning_text(self):
+        """При превышении лимита изображений — сообщение об изображениях."""
+        from aiogram.types import ContentType
+
+        middleware = ThrottleMiddleware(image_limit=1, image_window=60)
+        handler = AsyncMock(return_value="ok")
+
+        event = _make_update_with_message(12345)
+        event.message.content_type = ContentType.PHOTO
+        event.message.answer = AsyncMock()
+
+        asyncio.run(middleware(handler, event, {}))
+        asyncio.run(middleware(handler, event, {}))
+
+        event.message.answer.assert_awaited_once()
+        call_text = event.message.answer.call_args[0][0]
+        assert "изображений" in call_text
+
+
+class TestLlmRateLimit:
+    """Тесты check_llm_limit — лимит LLM-запросов."""
+
+    def setup_method(self):
+        """Очистить глобальный LLM bucket перед каждым тестом."""
+        _llm_bucket._requests.clear()
+
+    def test_llm_limit_allows_under_limit(self):
+        """Запросы в пределах лимита — разрешены."""
+        for _ in range(10):
+            assert check_llm_limit(12345) is True
+
+    def test_llm_limit_blocks_over_limit(self):
+        """Превышение лимита — блокировка."""
+        for _ in range(10):
+            check_llm_limit(12345)
+
+        assert check_llm_limit(12345) is False
+
+    def test_llm_limit_per_user(self):
+        """Лимиты LLM независимы для разных пользователей."""
+        for _ in range(10):
+            check_llm_limit(111)
+
+        # Пользователь 111 заблокирован
+        assert check_llm_limit(111) is False
+        # Пользователь 222 — нет
+        assert check_llm_limit(222) is True
+
+    def test_llm_limit_resets_after_window(self):
+        """После истечения окна лимит сбрасывается."""
+        for _ in range(10):
+            check_llm_limit(12345)
+
+        assert check_llm_limit(12345) is False
+
+        # Сдвигаем время на 1 час вперёд
+        with patch("bot.middlewares.throttle.time") as mock_time:
+            mock_time.monotonic.return_value = time.monotonic() + 3601
+            assert check_llm_limit(12345) is True

@@ -743,7 +743,7 @@
         "Шаг 3: Отправить 6 изображений — блокировка"
       ],
       "dependencies": ["TASK-010"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-036",
