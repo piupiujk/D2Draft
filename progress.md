@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-03-07 — TASK-025: Сервис распознавания драфта (DONE)
+
+**Что сделано:**
+- `services/draft.py` — сервис распознавания драфта из скриншота через LLM Vision
+- `recognize_draft(image_bytes, llm_client)` — основная async-функция, принимает байты изображения и LLMClient
+- `ValidatedDraft` — dataclass с валидированными hero_id, именами на русском, confidence, needs_confirmation
+- `_validate_recognition()` — валидация hero_id через HERO_BY_ID, обогащение русскими именами
+- Обработка edge-cases: невалидные hero_id (отфильтровываются, confidence пересчитывается), пустой драфт, размытое фото
+- При confidence < 0.7 — needs_confirmation=True
+- `tests/services/test_draft.py` — 10 тестов (7 unit для _validate_recognition, 3 интеграционных для recognize_draft с моком LLMClient)
+
+**Тест-шаги:**
+- Шаг 1: Тест `test_calls_llm_and_validates` — скриншот отправляется в LLM, распознанные герои маппятся на валидные hero_id ✅
+- Шаг 2: Тест `test_valid_full_draft` — все hero_id из ответа LLM валидны и маппятся на HERO_BY_ID ✅
+- Шаг 3: Тест `test_blurry_image_low_confidence` — при confidence=0.3 выставляется needs_confirmation=True ✅
+- `uv run ruff check .` — 0 ошибок ✅
+- `uv run pytest tests/services/test_draft.py` — 10/10 тестов ✅
+
+**Заметки для следующей итерации:**
+- TASK-025 разблокирует: TASK-026 (рекомендация пиков на основе драфта)
+- `services/draft.py` использует `clients/llm.py:LLMClient.recognize_draft()` и парсер `_parse_draft_recognition()`
+- Для запуска dev-тестов нужно `uv sync --extra dev` (не `uv sync --dev`)
+- Существующий тест `test_saves_to_repo_when_provided` в test_match_analysis.py падает — не связано с TASK-025
+- Тесты с `cloudscraper` (stratz) не запускаются — модуль не в зависимостях, проблема до TASK-025
+
+---
+
 ## 2026-03-07 — TASK-024: LLM-промпты для распознавания, рекомендаций, разбора (DONE)
 
 **Что сделано:**

@@ -535,7 +535,7 @@
         "Шаг 3: Отправить размытое фото — получить needs_confirmation=True"
       ],
       "dependencies": ["TASK-009", "TASK-024"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-026",
