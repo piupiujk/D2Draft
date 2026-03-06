@@ -455,7 +455,7 @@
         "Шаг 3: Сменить роль — выбор новой роли через inline-кнопки"
       ],
       "dependencies": ["TASK-012"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-022",

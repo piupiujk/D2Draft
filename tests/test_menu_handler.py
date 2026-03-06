@@ -257,9 +257,7 @@ import asyncio  # noqa: E402
 from bot.handlers.menu import (  # noqa: E402
     _DRAFT_STUB_TEXT,
     _NOT_REGISTERED_TEXT,
-    _SETTINGS_STUB_TEXT,
     btn_draft,
-    btn_settings,
 )
 from bot.keyboards.menu import (  # noqa: E402
     ALL_MENU_BUTTONS,
@@ -338,57 +336,6 @@ class TestBtnDraft:
         asyncio.run(btn_draft(msg, user=_sample_user()))
         text = msg.answer.call_args[0][0]
         assert text == _DRAFT_STUB_TEXT
-
-
-# ===========================================================================
-# Тесты: btn_settings (кнопка «Настройки»)
-# ===========================================================================
-
-
-class TestBtnSettings:
-    """Тесты для кнопки 'Настройки'."""
-
-    def test_unregistered_user_gets_start_prompt(self):
-        """Незарегистрированный пользователь получает предложение /start."""
-        msg = _make_message(BTN_SETTINGS)
-        asyncio.run(btn_settings(msg, user=None))
-        msg.answer.assert_called_once()
-        text = msg.answer.call_args[0][0]
-        assert "/start" in text
-        assert text == _NOT_REGISTERED_TEXT
-
-    def test_registered_user_gets_stub(self):
-        """Зарегистрированный пользователь видит заглушку."""
-        msg = _make_message(BTN_SETTINGS)
-        user = _sample_user()
-        asyncio.run(btn_settings(msg, user=user))
-        msg.answer.assert_called_once()
-        text = msg.answer.call_args[0][0]
-        assert "Настройки" in text
-        assert "в разработке" in text
-
-    def test_stub_uses_html_parse_mode(self):
-        """Заглушка отправляется с parse_mode='HTML'."""
-        msg = _make_message(BTN_SETTINGS)
-        asyncio.run(btn_settings(msg, user=_sample_user()))
-        kwargs = msg.answer.call_args[1]
-        assert kwargs.get("parse_mode") == "HTML"
-
-    def test_stub_lists_future_features(self):
-        """Заглушка перечисляет будущие возможности."""
-        msg = _make_message(BTN_SETTINGS)
-        asyncio.run(btn_settings(msg, user=_sample_user()))
-        text = msg.answer.call_args[0][0]
-        assert "уведомления" in text.lower()
-        assert "роль" in text.lower()
-        assert "MMR" in text
-
-    def test_stub_text_matches_constant(self):
-        """Текст заглушки совпадает с константой."""
-        msg = _make_message(BTN_SETTINGS)
-        asyncio.run(btn_settings(msg, user=_sample_user()))
-        text = msg.answer.call_args[0][0]
-        assert text == _SETTINGS_STUB_TEXT
 
 
 # ===========================================================================

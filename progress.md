@@ -750,3 +750,61 @@
   - TASK-034 (валидация, deps: 012 ✅)
   - TASK-035 (rate limiting, deps: 010 ✅)
   - TASK-031 (уведомления, medium, deps: 019+007 ✅)
+
+---
+
+## 2026-03-06 — TASK-021: Хендлер /settings: управление уведомлениями, сменой роли, обновлением MMR (DONE)
+
+**Что сделано:**
+- `bot/states/settings.py` — FSM-состояния: `waiting_new_mmr`, `waiting_new_steam`
+- `bot/handlers/settings.py` — роутер `settings_router` с полным набором хендлеров:
+  - `cmd_settings()` — команда `/settings`: показ inline-меню настроек с текущими значениями
+  - `btn_settings()` — кнопка «Настройки» из главного меню (перенесена из menu.py)
+  - `toggle_notifications()` — переключение уведомлений (callback `settings:toggle_notif`)
+  - `change_role_menu()` — показ клавиатуры выбора новой роли (callback `settings:change_role`)
+  - `process_role_change()` — обработка выбора роли (prefix `settings_role:`)
+  - `update_mmr_settings()` — запрос ввода нового MMR (callback `settings:update_mmr`) → FSM
+  - `process_new_mmr()` — обработка ввода MMR (валидация 0-15000), сохранение в Supabase
+  - `change_steam_menu()` — запрос нового Steam ID (callback `settings:change_steam`) → FSM
+  - `process_new_steam()` — валидация через SteamClient, проверка открытости, сохранение
+- `_settings_menu_text()` — текст меню с текущими значениями (уведомления, роль, MMR, Steam ID)
+- `_settings_kb()` — inline-клавиатура из 4 кнопок (переключение уведомлений, смена роли, обновление MMR, смена Steam)
+- `_role_selection_kb()` — inline-клавиатура выбора роли с prefix `settings_role:` (не конфликтует с `role:` из онбординга)
+- Заглушка настроек удалена из `bot/handlers/menu.py`
+- Роутер `settings_router` зарегистрирован в `bot/__main__.py` (перед help_router и menu_router)
+- Все изменения сохраняются через `UserRepository.update()` / `update_mmr()`
+- Обработка ошибок: незарегистрированный пользователь → /start, ошибки БД/API → информативные сообщения
+- `tests/test_settings_handler.py` — 48 тестов:
+  - _settings_menu_text: 9 тестов (заголовок, уведомления вкл/выкл, роль, MMR, Steam ID, тире для пустых, HTML)
+  - _settings_kb: 6 тестов (4 кнопки, текст переключения уведомлений, кнопки роли/MMR/Steam)
+  - cmd_settings: 4 теста (незарегистрированный, показ меню, HTML, сброс FSM)
+  - btn_settings: 2 теста (незарегистрированный, показ меню)
+  - toggle_notifications: 5 тестов (незарегистрированный, выключение, включение, обновление сообщения, ошибка)
+  - change_role_menu: 2 теста (незарегистрированный, показ выбора роли)
+  - process_role_change: 5 тестов (незарегистрированный, невалидная роль, смена роли, обновление сообщения, ошибка)
+  - update_mmr_settings: 2 теста (незарегистрированный, показ ввода MMR)
+  - process_new_mmr: 8 тестов (незарегистрированный, не число, отрицательный, >15000, валидный, 0, 15000, ошибка БД)
+  - change_steam_menu: 2 теста (незарегистрированный, показ ввода Steam)
+  - process_new_steam: 6 тестов (незарегистрированный, пустой ввод, валидный Steam, закрытый профиль, невалидный ID, ошибка API)
+  - SettingsRouter: 2 теста (существование роутера, FSM-состояния)
+- Обновлён `tests/test_menu_handler.py` — удалены 5 тестов заглушки настроек
+
+**Тест-шаги:**
+- Шаг 1: `/settings` → inline-меню настроек с текущими значениями ✅ (test_registered_shows_menu)
+- Шаг 2: Выключить уведомления → статус изменился ✅ (test_disables_notifications)
+- Шаг 3: Сменить роль → выбор роли через inline-кнопки → сохранение ✅ (test_shows_role_selection, test_changes_role)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 611/611 тестов ✅
+
+**Заметки для следующей итерации:**
+- Callback prefix `settings_role:` используется для выбора роли в настройках (не конфликтует с `role:` из онбординга)
+- При смене Steam: валидация через SteamClient → обновление steam_id + username в Supabase
+- При обновлении MMR: ручной ввод числа (0-15000), не через API — пользователь сам знает свой MMR
+- Заглушка для кнопки «Настройки» удалена из menu.py — теперь полноценный хендлер в settings.py
+- Приоритетные pending задачи с выполненными зависимостями (high):
+  - TASK-009 (LLM клиент, deps: 001 ✅)
+  - TASK-034 (валидация, deps: 012 ✅)
+  - TASK-035 (rate limiting, deps: 010 ✅)
+  - TASK-031 (уведомления, medium, deps: 019+007 ✅)
+  - TASK-030 (scheduler, medium, deps: 004+005+006 ✅)
+  - TASK-032 (подписки, medium, deps: 005+010 ✅)
