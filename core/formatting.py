@@ -32,7 +32,7 @@ def format_meta_heroes(heroes: list[MetaHero], role_label: str) -> str:
         wr_pct = f"{h.winrate * 100:.1f}%"
         pr_pct = f"{h.pick_rate * 100:.1f}%"
 
-        line = f"{i}. <b>{h.name_ru}</b> ({h.name_en})"
+        line = f"{i}. <b>{h.name_en}</b>"
         line += f"\n   Винрейт: {wr_pct} | Пикрейт: {pr_pct} | Матчей: {h.match_count}"
 
         if h.personal_winrate is not None and h.personal_games is not None:
@@ -68,7 +68,7 @@ def format_build(build: HeroBuild) -> str:
         Строка с HTML-разметкой, длина <= 4096 символов.
     """
     lines: list[str] = [
-        f"🛡 <b>Билд: {build.name_ru}</b> ({build.name_en})",
+        f"🛡 <b>Билд: {build.name_en}</b>",
     ]
 
     if build.guide_winrate > 0:
@@ -79,7 +79,7 @@ def format_build(build: HeroBuild) -> str:
     # Стартовые предметы
     if build.starting_items:
         lines.append("🟢 <b>Стартовые предметы</b>")
-        items_text = ", ".join(it.name_ru for it in build.starting_items)
+        items_text = ", ".join(it.name_en for it in build.starting_items)
         lines.append(items_text)
         lines.append("")
 
@@ -92,7 +92,7 @@ def format_build(build: HeroBuild) -> str:
             if it.time is not None and it.time > 0:
                 minutes = it.time // 60
                 time_str = f" ~{minutes} мин"
-            parts = [f"{i}. {it.name_ru}"]
+            parts = [f"{i}. {it.name_en}"]
             if wr:
                 parts.append(wr)
             if time_str:
@@ -103,7 +103,7 @@ def format_build(build: HeroBuild) -> str:
     # Ситуативные предметы
     if build.situational_items:
         lines.append("🟡 <b>Ситуативные предметы</b>")
-        sit_names = ", ".join(it.name_ru for it in build.situational_items)
+        sit_names = ", ".join(it.name_en for it in build.situational_items)
         lines.append(sit_names)
         lines.append("")
 
@@ -179,7 +179,7 @@ def format_match_analysis(analysis: MatchAnalysis) -> str:
         f"⚔️ <b>Разбор матча #{analysis.match_id}</b>",
         "",
         f"{emoji} <b>{result_text}</b> | {duration_str}",
-        f"🦸 <b>{analysis.hero_name_ru}</b> ({analysis.hero_name_en})",
+        f"🦸 <b>{analysis.hero_name_en}</b>",
         f"🎯 Роль: {role_label}",
         f"📊 KDA: <b>{analysis.kills}/{analysis.deaths}/{analysis.assists}</b>",
     ]
@@ -315,7 +315,7 @@ def format_profile(profile: UserProfile) -> str:
         lines.append("🦸 <b>Топ герои</b>")
         for i, h in enumerate(profile.top_heroes, start=1):
             wr_pct = f"{h.winrate * 100:.1f}%"
-            lines.append(f"   {i}. {h.name_ru} — {wr_pct} ({h.games} игр)")
+            lines.append(f"   {i}. {h.name_en} — {wr_pct} ({h.games} игр)")
 
     result = "\n".join(lines)
 

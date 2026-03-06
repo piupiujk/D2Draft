@@ -33,6 +33,8 @@ class UserRepository(BaseRepository):
             .maybe_single()
             .execute()
         )
+        if response is None:
+            return None
         return response.data
 
     async def get_by_steam_id(self, steam_id: str) -> dict[str, Any] | None:
@@ -45,6 +47,8 @@ class UserRepository(BaseRepository):
             .maybe_single()
             .execute()
         )
+        if response is None:
+            return None
         return response.data
 
     async def create(

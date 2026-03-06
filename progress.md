@@ -866,3 +866,81 @@
   - TASK-030 (scheduler, deps: 004+005+006 ✅)
   - TASK-031 (уведомления, deps: 019+007 ✅)
   - TASK-032 (подписки, deps: 005+010 ✅)
+
+---
+
+## 2026-03-06 — Первый запуск бота: исправление runtime-ошибок и совместимости с API (DONE)
+
+**Что сделано:**
+
+Бот впервые запущен в боевом режиме. Обнаружены и исправлены множественные проблемы совместимости между написанным кодом и актуальными версиями зависимостей/API.
+
+### 1. Установка зависимостей
+- `pip install httpx apscheduler` — отсутствовали в системе
+- `pip install "httpx[http2]"` — пакет `h2` требовался для Supabase (http2=True)
+- `pip install supabase --no-deps` + ручная установка субзависимостей — обход `pyiceberg` (требует Visual C++ Build Tools, отсутствует)
+- Создана заглушка `pyiceberg` в site-packages — модуль `storage3` импортирует `pyiceberg.catalog.rest.RestCatalog` при старте, но для работы бота storage не используется
+
+### 2. Фикс postgrest 2.28: maybe_single() возвращает None
+- **Проблема:** `postgrest` 2.28 изменил поведение `.maybe_single().execute()` — возвращает `None` (не объект с `.data`) когда запись не найдена. Старый код вызывал `response.data` → `AttributeError: 'NoneType' object has no attribute 'data'`
+- **Исправлено в:** `repositories/user.py` (2 места), `repositories/match_analysis.py` (1), `repositories/subscription.py` (1)
+- Добавлена проверка `if response is None: return None` перед обращением к `.data`
+
+### 3. RLS-политики Supabase: разрешение доступа для anon-роли
+- **Проблема:** RLS-политики были настроены через `auth.uid()` (Supabase Auth JWT), но бот использует `anon` ключ без Supabase Auth → `auth.uid()` = NULL → все операции блокировались (INSERT 401, SELECT 406)
+- **Решение:** Применена миграция `allow_anon_full_access` — добавлены RLS-политики для `anon` роли на все 5 таблиц (SELECT/INSERT/UPDATE)
+
+### 4. Cloudflare блокирует Stratz API
+- **Проблема:** Stratz API за Cloudflare challenge ("Just a moment..."), httpx-запросы из Python блокируются (403), хотя браузер проходит
+- **Решение:** Интегрирован `cloudscraper` — замена httpx на cloudscraper в `StratzClient._query()` через `asyncio.to_thread()` (cloudscraper синхронный)
+- `pip install cloudscraper`
+- `clients/stratz.py`: добавлен `import cloudscraper`, `self._scraper = cloudscraper.create_scraper()`, метод `_sync_query()`, переписан `_query()` с `asyncio.to_thread`
+
+### 5. Обновление Stratz GraphQL API (схема изменилась)
+- **Два типа enum-ов рангов:**
+  - `RankBracket` — одиночные (`HERALD`, `LEGEND`, `ANCIENT`) — используется в `winWeek`
+  - `RankBracketBasicEnum` — парные (`HERALD_GUARDIAN`, `LEGEND_ANCIENT`) — используется в `stats`, `itemStartingPurchase`, `itemFullPurchase`
+- Добавлен `RANK_TO_STRATZ_BRACKET_BASIC` маппинг (парные), `RANK_TO_STRATZ_BRACKET` обновлён на одиночные
+- **QUERY_META_HEROES:** тип переменной `$bracketIds` изменён с `[RankBracketBasicEnum]` на `[RankBracket]`
+- **QUERY_HERO_BUILD:** полностью переписан — старый `stats.purchasePattern` удалён из API, заменён на `itemStartingPurchase` + `itemFullPurchase` (отдельные top-level поля `HeroStatsQuery`). Переменная `$positionId` → `$positionIds` (массив). Удалён `gameModeIds` (не поддерживается `stats`)
+- **Парсинг build:** предметы из `itemFullPurchase` разделяются по времени: early (<15мин), mid (15-25мин), late (>25мин)
+- **QUERY_HERO_GUIDE:** `guide` больше не принимает `bracketBasicIds` и `positionIds` → убраны. Поля `winCount`, `abilityMaxOrder`, `talent` удалены из `HeroGuideListType`. Guide API теперь возвращает конкретные матчи, а не агрегированные данные → **guide временно отключён**, возвращается пустой `HeroGuideData`
+
+### 6. Фикс дублирования match_analyses
+- **Проблема:** Повторный `/lastmatch` для того же матча → `409 Conflict` (unique constraint `match_analyses_user_id_match_id_key`)
+- **Решение:** `services/match_analysis.py` — перед `insert` добавлена проверка `get_by_match_id()`, вставка только если записи нет
+
+**Файлы изменены:**
+- `repositories/user.py` — фикс maybe_single()
+- `repositories/match_analysis.py` — фикс maybe_single()
+- `repositories/subscription.py` — фикс maybe_single()
+- `clients/stratz.py` — cloudscraper, обновление GraphQL-запросов и маппингов
+- `services/build.py` — отключение guide, использование пустого HeroGuideData
+- `services/match_analysis.py` — проверка дубликатов перед insert
+
+**Текущее состояние бота (проверено вручную):**
+- `/start` — онбординг работает ✅ (ссылка формата profiles/..., не id/... — STEAM_API_KEY пустой)
+- `/meta` — мета-герои по ролям ✅
+- `/build` — билд героя (предметы без скиллов/талантов) ✅
+- `/lastmatch` — разбор матча с метриками ✅
+- `/profile` — профиль и статистика ✅
+- `/settings` — настройки ✅
+- `/help` — справка ✅
+
+**Что НЕ работает / ограничения:**
+- Ссылки формата `steamcommunity.com/id/...` — требуют `STEAM_API_KEY` (не заполнен в .env)
+- Скиллы и таланты в `/build` — Stratz guide API изменился, временно отключены
+- LLM-советы по матчам — заглушка (TASK-028)
+- Драфт-анализ — не реализован
+
+**Заметки для следующей итерации:**
+- `cloudscraper` — синхронная библиотека, используется через `asyncio.to_thread()`. Может замедлять при большом количестве запросов. В будущем рассмотреть async-альтернативу или кеширование Cloudflare cookies
+- `pyiceberg` заглушка в site-packages — хрупкое решение, при обновлении supabase может сломаться. Рассмотреть переход на `service_role` ключ (обходит RLS) или понижение версии storage3
+- Stratz API активно меняет GraphQL-схему. При следующих проблемах использовать introspection-запрос `{ __type(name: "...") { fields { name } } }` для проверки
+- STEAM_API_KEY нужно получить на https://steamcommunity.com/dev/apikey и добавить в .env
+- Приоритетные pending задачи:
+  - TASK-034 (валидация Steam при регистрации, high)
+  - TASK-035 (rate limiting, high)
+  - TASK-024 (LLM-промпты, medium) — блокирует TASK-025, 028, 029
+  - TASK-030 (scheduler, medium)
+  - Восстановление guide (скиллы/таланты) — нужен новый подход к Stratz API

@@ -367,18 +367,20 @@ async def analyze_last_match(
 
     # 9. Сохраняем в БД (если переданы репозиторий и user_id)
     if match_repo is not None and user_id is not None:
-        stats_dict = {
-            m.name: {"value": m.value, "median": m.median}
-            for m in metrics
-        }
-        await match_repo.insert(
-            user_id=user_id,
-            match_id=match_id,
-            hero_id=hero_id,
-            role=int(role),
-            result=result.value,
-            duration_sec=match.duration,
-            stats=stats_dict,
-        )
+        existing = await match_repo.get_by_match_id(user_id, match_id)
+        if existing is None:
+            stats_dict = {
+                m.name: {"value": m.value, "median": m.median}
+                for m in metrics
+            }
+            await match_repo.insert(
+                user_id=user_id,
+                match_id=match_id,
+                hero_id=hero_id,
+                role=int(role),
+                result=result.value,
+                duration_sec=match.duration,
+                stats=stats_dict,
+            )
 
     return analysis

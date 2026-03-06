@@ -53,6 +53,8 @@ class MatchAnalysisRepository(BaseRepository):
             .maybe_single()
             .execute()
         )
+        if response is None:
+            return None
         return response.data
 
     async def get_latest(

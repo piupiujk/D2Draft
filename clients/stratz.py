@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+import cloudscraper
 import httpx
 
 from core.enums import RankBracket, Role
@@ -18,6 +19,18 @@ from core.exceptions import APIRateLimited
 
 # Stratz использует сгруппированные брекеты по два ранга
 RANK_TO_STRATZ_BRACKET: dict[RankBracket, str] = {
+    RankBracket.HERALD: "HERALD",
+    RankBracket.GUARDIAN: "GUARDIAN",
+    RankBracket.CRUSADER: "CRUSADER",
+    RankBracket.ARCHON: "ARCHON",
+    RankBracket.LEGEND: "LEGEND",
+    RankBracket.ANCIENT: "ANCIENT",
+    RankBracket.DIVINE: "DIVINE",
+    RankBracket.IMMORTAL: "IMMORTAL",
+}
+
+# RankBracketBasicEnum — парные брекеты для heroStats.winWeek/stats
+RANK_TO_STRATZ_BRACKET_BASIC: dict[RankBracket, str] = {
     RankBracket.HERALD: "HERALD_GUARDIAN",
     RankBracket.GUARDIAN: "HERALD_GUARDIAN",
     RankBracket.CRUSADER: "CRUSADER_ARCHON",
@@ -150,7 +163,7 @@ class HeroMatchupData:
 # ---------------------------------------------------------------------------
 
 QUERY_META_HEROES = """
-query HeroMeta($bracketIds: [RankBracketBasicEnum], $positionIds: [MatchPlayerPositionType]) {
+query HeroMeta($bracketIds: [RankBracket], $positionIds: [MatchPlayerPositionType]) {
   heroStats {
     winWeek(
       take: 1
@@ -170,44 +183,28 @@ QUERY_HERO_BUILD = """
 query HeroBuild(
   $heroId: Short!
   $bracketBasicIds: [RankBracketBasicEnum]
-  $positionId: MatchPlayerPositionType
+  $positionIds: [MatchPlayerPositionType]
 ) {
   heroStats {
-    stats(
-      heroIds: [$heroId]
+    itemStartingPurchase(
+      heroId: $heroId
       bracketBasicIds: $bracketBasicIds
-      positionIds: [$positionId]
-      gameModeIds: [ALL_PICK_RANKED]
+      positionIds: $positionIds
     ) {
-      heroId
+      itemId
       matchCount
       winCount
-      purchasePattern {
-        startingItems {
-          itemId
-          matchCount
-          winCount
-          wasGiven
-        }
-        earlyGame {
-          itemId
-          matchCount
-          winCount
-          time
-        }
-        midGame {
-          itemId
-          matchCount
-          winCount
-          time
-        }
-        lateGame {
-          itemId
-          matchCount
-          winCount
-          time
-        }
-      }
+      wasGiven
+    }
+    itemFullPurchase(
+      heroId: $heroId
+      bracketBasicIds: $bracketBasicIds
+      positionIds: $positionIds
+    ) {
+      itemId
+      matchCount
+      winCount
+      time
     }
   }
 }
@@ -216,14 +213,12 @@ query HeroBuild(
 QUERY_HERO_GUIDE = """
 query HeroGuide(
   $heroId: Short!
-  $bracketBasicIds: [RankBracketBasicEnum]
   $positionId: MatchPlayerPositionType
 ) {
   heroStats {
     guide(
       heroId: $heroId
-      bracketBasicIds: $bracketBasicIds
-      positionIds: [$positionId]
+      positionId: $positionId
       take: 1
     ) {
       heroId
@@ -331,6 +326,7 @@ class StratzClient:
         self._base_url = base_url
         self._external_client = client is not None
         self._client = client or httpx.AsyncClient(timeout=30.0)
+        self._scraper = cloudscraper.create_scraper()
         # Stratz лимиты: 20 запросов/сек
         self._limiter = _RateLimiter(max_tokens=20, refill_period=1.0)
 
@@ -387,30 +383,28 @@ class StratzClient:
         """
         variables: dict[str, Any] = {"heroId": hero_id}
         if bracket is not None:
-            stratz_bracket = RANK_TO_STRATZ_BRACKET[RankBracket(bracket)]
+            stratz_bracket = RANK_TO_STRATZ_BRACKET_BASIC[RankBracket(bracket)]
             variables["bracketBasicIds"] = [stratz_bracket]
         if role is not None:
-            variables["positionId"] = ROLE_TO_STRATZ_POSITION[Role(role)]
+            variables["positionIds"] = [ROLE_TO_STRATZ_POSITION[Role(role)]]
 
         data = await self._query(QUERY_HERO_BUILD, variables)
 
-        stats_list = (
-            data.get("data", {})
-            .get("heroStats", {})
-            .get("stats", [])
-        )
-        if not stats_list:
-            return HeroBuildData(hero_id=hero_id)
+        hero_stats = data.get("data", {}).get("heroStats", {})
+        starting_raw = hero_stats.get("itemStartingPurchase", []) or []
+        full_raw = hero_stats.get("itemFullPurchase", []) or []
 
-        stats = stats_list[0]
-        pattern = stats.get("purchasePattern") or {}
+        # Split full items by time: early (<15min), mid (15-25min), late (>25min)
+        early = [i for i in full_raw if (i.get("time") or 0) < 15]
+        mid = [i for i in full_raw if 15 <= (i.get("time") or 0) < 25]
+        late = [i for i in full_raw if (i.get("time") or 0) >= 25]
 
         return HeroBuildData(
             hero_id=hero_id,
-            starting_items=self._parse_items(pattern.get("startingItems", [])),
-            early_game=self._parse_items(pattern.get("earlyGame", [])),
-            mid_game=self._parse_items(pattern.get("midGame", [])),
-            late_game=self._parse_items(pattern.get("lateGame", [])),
+            starting_items=self._parse_items(starting_raw),
+            early_game=self._parse_items(early),
+            mid_game=self._parse_items(mid),
+            late_game=self._parse_items(late),
         )
 
     async def get_hero_guide(
@@ -424,9 +418,6 @@ class StratzClient:
         Возвращает HeroGuideData с ability_order и talents.
         """
         variables: dict[str, Any] = {"heroId": hero_id}
-        if bracket is not None:
-            stratz_bracket = RANK_TO_STRATZ_BRACKET[RankBracket(bracket)]
-            variables["bracketBasicIds"] = [stratz_bracket]
         if role is not None:
             variables["positionId"] = ROLE_TO_STRATZ_POSITION[Role(role)]
 
@@ -482,7 +473,7 @@ class StratzClient:
         """
         variables: dict[str, Any] = {"heroId": hero_id}
         if bracket is not None:
-            stratz_bracket = RANK_TO_STRATZ_BRACKET[RankBracket(bracket)]
+            stratz_bracket = RANK_TO_STRATZ_BRACKET_BASIC[RankBracket(bracket)]
             variables["bracketBasicIds"] = [stratz_bracket]
 
         data = await self._query(QUERY_HERO_MATCHUPS, variables)
@@ -559,6 +550,16 @@ class StratzClient:
             synergy=raw.get("synergy", 0.0),
         )
 
+    def _sync_query(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Синхронный запрос через cloudscraper (обход Cloudflare)."""
+        resp = self._scraper.post(url, json=payload, headers=headers, timeout=30)
+        return {"status_code": resp.status_code, "body": resp.text, "headers": dict(resp.headers)}
+
     async def _query(
         self,
         query: str,
@@ -574,38 +575,41 @@ class StratzClient:
             payload["variables"] = variables
 
         last_exc: Exception | None = None
+        import json as json_mod
 
         for attempt in range(_MAX_RETRIES):
             await self._limiter.acquire()
             try:
-                resp = await self._client.post(
-                    self._base_url, json=payload, headers=headers,
+                raw = await asyncio.to_thread(
+                    self._sync_query, self._base_url, headers, payload,
                 )
-            except httpx.HTTPError as exc:
+            except Exception as exc:
                 last_exc = exc
                 await asyncio.sleep(_RETRY_BACKOFF * (2 ** attempt))
                 continue
 
-            if resp.status_code == 429:
-                retry_after = float(
-                    resp.headers.get("retry-after", _RETRY_BACKOFF)
-                )
+            status = raw["status_code"]
+
+            if status == 429:
+                retry_after = float(raw["headers"].get("retry-after", _RETRY_BACKOFF))
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(retry_after)
                     continue
                 raise APIRateLimited("Stratz", retry_after=retry_after)
 
-            if resp.status_code in _RETRY_STATUS_CODES:
-                last_exc = httpx.HTTPStatusError(
-                    f"HTTP {resp.status_code}",
-                    request=resp.request,
-                    response=resp,
-                )
+            if status in _RETRY_STATUS_CODES:
+                last_exc = Exception(f"HTTP {status}")
                 await asyncio.sleep(_RETRY_BACKOFF * (2 ** attempt))
                 continue
 
-            resp.raise_for_status()
-            body = resp.json()
+            if status >= 400:
+                raise httpx.HTTPStatusError(
+                    f"HTTP {status}",
+                    request=httpx.Request("POST", self._base_url),
+                    response=httpx.Response(status),
+                )
+
+            body = json_mod.loads(raw["body"])
 
             # Обработка ошибок GraphQL
             if "errors" in body and body["errors"]:

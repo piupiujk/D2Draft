@@ -44,6 +44,8 @@ class SubscriptionRepository(BaseRepository):
             .maybe_single()
             .execute()
         )
+        if response is None:
+            return None
         return response.data
 
     async def deactivate(self, subscription_id: int) -> dict[str, Any]:

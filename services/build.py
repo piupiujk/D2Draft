@@ -130,9 +130,10 @@ async def get_hero_build(
     if cached is not None:
         return cached
 
-    # Получаем данные параллельно: item build и guide (skill/talents)
+    # Получаем item build из Stratz
     build_data = await stratz.get_hero_build(hero_id, role, bracket)
-    guide_data = await stratz.get_hero_guide(hero_id, role, bracket)
+    # Guide API изменился — скиллы/таланты временно недоступны
+    guide_data = HeroGuideData(hero_id=hero_id)
 
     hero_data = get_hero_by_id(hero_id)
 
