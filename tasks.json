@@ -473,7 +473,7 @@
         "Шаг 2: Проверить что все 8 команд перечислены"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-023",
@@ -495,7 +495,7 @@
         "Шаг 2: Отправить текст кнопки без регистрации — получить предложение /start"
       ],
       "dependencies": ["TASK-012", "TASK-011"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-024",

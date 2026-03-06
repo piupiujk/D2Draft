@@ -706,3 +706,47 @@
   - TASK-034 (валидация, deps: 012 ✅)
   - TASK-035 (rate limiting, deps: 010 ✅)
   - TASK-031 (уведомления, deps: 019+007 ✅)
+
+---
+
+## 2026-03-06 — TASK-022: Хендлер /help: справка по командам и функциям бота (DONE)
+
+**Что сделано:**
+- `bot/handlers/help.py` — роутер `help_router` с хендлером `cmd_help()`:
+  - Команда `/help` — вывод компактной справки в HTML parse_mode
+  - Все 8 команд перечислены: /start, /meta, /build, /lastmatch, /profile, /draft, /settings, /help
+  - Описание бесплатных функций: мета-герои, билды, разбор матча, профиль
+  - Описание Premium функций: анализ драфта (Vision AI), рекомендации пиков, AI-советы, ситуативные билды, уведомления
+  - Текст укладывается в лимит Telegram (4096 символов)
+- Роутер `help_router` зарегистрирован в `bot/__main__.py` (до menu_router)
+- `tests/test_help_handler.py` — 17 тестов:
+  - cmd_help: 2 теста (отправка текста, parse_mode HTML)
+  - HELP_TEXT: 13 тестов (наличие всех 8 команд, бесплатные/Premium функции, лимит Telegram, валидный HTML)
+  - HelpRouter: 2 теста (существование роутера, импорт)
+
+**Также верифицирован и закрыт TASK-023 (роутинг текстовых кнопок главного меню):**
+- BTN_META обрабатывается в meta.py (btn_meta) ✅
+- BTN_BUILD обрабатывается в build.py (btn_build) ✅
+- BTN_MATCH обрабатывается в match.py (btn_match) ✅
+- BTN_PROFILE обрабатывается в profile.py (btn_profile) ✅
+- BTN_DRAFT обрабатывается в menu.py (btn_draft — заглушка до TASK-027) ✅
+- BTN_SETTINGS обрабатывается в menu.py (btn_settings — заглушка до TASK-021) ✅
+- Все хендлеры проверяют регистрацию пользователя (user is None) ✅
+- menu_router зарегистрирован последним в __main__.py (ловит оставшиеся тексты) ✅
+- Исправлена ошибка сортировки импортов (ruff I001) в test_menu_handler.py ✅
+
+**Тест-шаги TASK-022:**
+- Шаг 1: `/help` → список команд с описаниями ✅ (test_sends_help_text)
+- Шаг 2: Все 8 команд перечислены ✅ (test_all_eight_commands_listed)
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run --with httpx pytest tests/ -v` — 563/563 тестов ✅
+
+**Заметки для следующей итерации:**
+- Хендлер /help не требует регистрации — справка доступна всем пользователям
+- Роутер help_router зарегистрирован перед menu_router (порядок важен: menu_router ловит любой текст кнопки)
+- Приоритетные pending задачи с выполненными зависимостями (high):
+  - TASK-009 (LLM клиент, deps: 001 ✅)
+  - TASK-021 (настройки, deps: 012 ✅)
+  - TASK-034 (валидация, deps: 012 ✅)
+  - TASK-035 (rate limiting, deps: 010 ✅)
+  - TASK-031 (уведомления, medium, deps: 019+007 ✅)
