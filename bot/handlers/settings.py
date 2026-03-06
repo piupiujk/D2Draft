@@ -20,6 +20,7 @@ from bot.states.settings import SettingsStates
 from clients.steam import SteamClient
 from core.enums import Role
 from core.exceptions import SteamProfileClosed
+from core.validators import validate_mmr, validate_steam_input
 from repositories.user import UserRepository
 
 logger = logging.getLogger(__name__)
@@ -285,16 +286,9 @@ async def process_new_mmr(
         await state.clear()
         return
 
-    raw = (message.text or "").strip()
-
-    try:
-        mmr = int(raw)
-    except ValueError:
-        await message.answer("MMR должен быть числом от 0 до 15000. Попробуй ещё раз.")
-        return
-
-    if mmr < 0 or mmr > 15000:
-        await message.answer("MMR должен быть числом от 0 до 15000. Попробуй ещё раз.")
+    mmr, err = validate_mmr(message.text or "")
+    if err:
+        await message.answer(err)
         return
 
     try:
@@ -354,16 +348,16 @@ async def process_new_steam(
         await state.clear()
         return
 
-    raw_input = (message.text or "").strip()
-    if not raw_input:
-        await message.answer("Отправь Steam ID или ссылку на профиль текстом.")
+    steam_input, err = validate_steam_input(message.text or "")
+    if err:
+        await message.answer(err)
         return
 
     steam_client = SteamClient(steam_api_key=_get_steam_api_key())
 
     try:
         async with steam_client:
-            steam_id_64, persona_name = await steam_client.resolve_and_validate(raw_input)
+            steam_id_64, persona_name = await steam_client.resolve_and_validate(steam_input)
     except SteamProfileClosed:
         await message.answer(
             "Steam-профиль закрыт. Открой его в настройках Steam и попробуй снова."
@@ -373,7 +367,7 @@ async def process_new_steam(
         await message.answer(f"Не удалось распознать Steam ID.\nОшибка: {e}")
         return
     except Exception:
-        logger.exception("Ошибка при валидации Steam ID: %s", raw_input)
+        logger.exception("Ошибка при валидации Steam ID: %s", steam_input)
         await message.answer("Произошла ошибка при проверке Steam-профиля. Попробуй позже.")
         await state.clear()
         return

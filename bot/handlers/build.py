@@ -17,6 +17,7 @@ from clients.stratz import StratzClient
 from core.exceptions import HeroNotFound
 from core.formatting import format_build
 from core.hero_mapping import find_hero, get_hero_by_id
+from core.validators import validate_hero_query
 from services.build import get_hero_build
 from services.meta import mmr_to_bracket
 
@@ -66,7 +67,10 @@ async def cmd_build(
     raw_text = (message.text or "").strip()
     parts = raw_text.split(maxsplit=1)
     if len(parts) > 1:
-        hero_query = parts[1].strip()
+        hero_query, err = validate_hero_query(parts[1])
+        if err:
+            await message.answer(err)
+            return
         await _resolve_and_show_build(message, state, user, hero_query)
         return
 
@@ -108,9 +112,9 @@ async def process_hero_name(
         await state.clear()
         return
 
-    hero_query = (message.text or "").strip()
-    if not hero_query:
-        await message.answer("Отправь имя героя текстом.")
+    hero_query, err = validate_hero_query(message.text or "")
+    if err:
+        await message.answer(err)
         return
 
     await _resolve_and_show_build(message, state, user, hero_query)

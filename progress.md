@@ -944,3 +944,37 @@
   - TASK-024 (LLM-промпты, medium) — блокирует TASK-025, 028, 029
   - TASK-030 (scheduler, medium)
   - Восстановление guide (скиллы/таланты) — нужен новый подход к Stratz API
+
+---
+
+## 2026-03-07 — TASK-034: Валидация входных данных (DONE)
+
+**Что сделано:**
+- Создан `core/validators.py` — централизованный модуль валидации с функциями:
+  - `validate_mmr(raw)` — проверка MMR (целое число 0–15000)
+  - `validate_hero_query(raw)` — проверка имени героя (длина ≤50, только буквы/цифры/пробелы/дефисы/апострофы, защита от XSS/SQL injection)
+  - `validate_steam_input(raw)` — проверка Steam-ввода (не пуст, длина ≤200)
+  - `validate_image_size(file_size)` — проверка размера изображений (≤10 МБ)
+- Интеграция в хендлеры:
+  - `bot/handlers/start.py` — MMR и Steam ID валидируются через `core/validators.py` (убрано дублирование)
+  - `bot/handlers/settings.py` — MMR и Steam ID валидируются через `core/validators.py` (убрано дублирование)
+  - `bot/handlers/build.py` — имя героя валидируется через `validate_hero_query()` (и в `/build [герой]`, и в FSM)
+- Убрана неиспользуемая константа `_MMR_INVALID_TEXT` из `start.py`
+- Создан `tests/test_validators.py` — 28 тестов покрывающих все валидаторы (MMR, герой, Steam, изображение)
+
+**Тест-шаги:**
+- `uv tool run ruff check .` — 0 ошибок ✅
+- `uv tool run pytest tests/test_core.py tests/test_validators.py -v` — 54/54 тестов ✅
+- SQL injection в Steam ID (`1; DROP TABLE users;`) → отклонено ✅
+- MMR = -100 → отклонено ✅
+- Имя героя со спецсимволами (`<script>alert(1)</script>`) → отклонено ✅
+- Проверка размера изображений >10 МБ → отклонено ✅
+
+**Заметки для следующей итерации:**
+- `validate_image_size()` создан, но хендлер `/draft` (TASK-027) ещё не реализован — интеграция будет при создании хендлера
+- Остальные тесты (14 файлов) падают на `ModuleNotFoundError` (httpx, cloudscraper) — предсуществующая проблема среды `uv tool run`
+- Приоритетные pending задачи:
+  - TASK-035 (rate limiting, high)
+  - TASK-024 (LLM-промпты, medium) — блокирует TASK-025, 028, 029
+  - TASK-030 (scheduler, medium)
+  - TASK-032 (подписки, medium)

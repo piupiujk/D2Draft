@@ -16,6 +16,7 @@ from bot.keyboards.roles import ROLE_CB_PREFIX, parse_role_callback, role_select
 from bot.states.onboarding import OnboardingStates
 from clients.steam import SteamClient
 from core.exceptions import SteamProfileClosed
+from core.validators import validate_mmr, validate_steam_input
 from repositories.user import DuplicateUserError, UserRepository
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,6 @@ _ASK_MMR_TEXT = (
     "Введи свой текущий MMR (число от 0 до 15000).\n"
     "Если не знаешь точный MMR, введи приблизительный."
 )
-
-_MMR_INVALID_TEXT = "MMR должен быть числом от 0 до 15000. Попробуй ещё раз."
 
 _ASK_ROLE_TEXT = "Выбери свою основную роль:"
 
@@ -113,9 +112,9 @@ async def process_steam_id(
     state: FSMContext,
 ) -> None:
     """Обработка ввода Steam ID/URL."""
-    raw_input = (message.text or "").strip()
-    if not raw_input:
-        await message.answer("Отправь Steam ID или ссылку на профиль текстом.")
+    steam_input, err = validate_steam_input(message.text or "")
+    if err:
+        await message.answer(err)
         return
 
     steam_client = SteamClient(
@@ -125,7 +124,7 @@ async def process_steam_id(
     try:
         async with steam_client:
             steam_id_64, persona_name = await steam_client.resolve_and_validate(
-                raw_input
+                steam_input
             )
     except SteamProfileClosed:
         await message.answer(_PROFILE_CLOSED_TEXT)
@@ -134,7 +133,7 @@ async def process_steam_id(
         await message.answer(_STEAM_ERROR_FORMAT.format(error=e))
         return
     except Exception:
-        logger.exception("Ошибка при валидации Steam ID: %s", raw_input)
+        logger.exception("Ошибка при валидации Steam ID: %s", steam_input)
         await message.answer(
             "Произошла ошибка при проверке Steam-профиля. Попробуй позже."
         )
@@ -193,16 +192,9 @@ async def process_mmr(
     state: FSMContext,
 ) -> None:
     """Обработка ввода MMR (0-15000)."""
-    raw = (message.text or "").strip()
-
-    try:
-        mmr = int(raw)
-    except ValueError:
-        await message.answer(_MMR_INVALID_TEXT)
-        return
-
-    if mmr < 0 or mmr > 15000:
-        await message.answer(_MMR_INVALID_TEXT)
+    mmr, err = validate_mmr(message.text or "")
+    if err:
+        await message.answer(err)
         return
 
     await state.update_data(mmr=mmr)
