@@ -1,10 +1,11 @@
-"""Сервис анализа матча: базовый разбор с метриками по ролям."""
+"""Сервис анализа матча: базовый разбор с метриками по ролям и LLM-советы."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
+from clients.llm import LLMClient
 from clients.opendota import MatchDetails, OpenDotaClient
 from clients.steam import steam_id_64_to_account_id
 from core.enums import MatchOutcome, Role
@@ -384,3 +385,84 @@ async def analyze_last_match(
             )
 
     return analysis
+
+
+# ---------------------------------------------------------------------------
+# LLM-совет по матчу (Premium)
+# ---------------------------------------------------------------------------
+
+
+def _build_llm_context(analysis: MatchAnalysis) -> dict[str, Any]:
+    """Сформировать контекст для LLM-промпта из анализа матча."""
+    role_names = {
+        Role.CARRY: "Carry",
+        Role.MID: "Mid",
+        Role.OFFLANE: "Offlane",
+        Role.SOFT_SUPPORT: "Soft Support",
+        Role.HARD_SUPPORT: "Hard Support",
+    }
+
+    metrics_data: dict[str, Any] = {}
+    median_stats: dict[str, Any] = {}
+    for m in analysis.metrics:
+        metrics_data[m.name] = m.value
+        median_stats[m.name] = m.median
+
+    context: dict[str, Any] = {
+        "match_id": analysis.match_id,
+        "hero": analysis.hero_name_ru,
+        "role": int(analysis.role),
+        "role_name": role_names.get(analysis.role, str(analysis.role)),
+        "result": analysis.result.value,
+        "duration": round(analysis.duration_sec / 60, 1),
+        "kills": analysis.kills,
+        "deaths": analysis.deaths,
+        "assists": analysis.assists,
+    }
+
+    # Добавляем детальные метрики из player_stats
+    ps = analysis.player_stats
+    for key in (
+        "gold_per_min", "xp_per_min", "last_hits", "denies",
+        "hero_damage", "tower_damage", "hero_healing",
+        "obs_placed", "sen_placed", "stuns",
+    ):
+        val = ps.get(key)
+        if val is not None:
+            context[key] = val
+
+    context["median_stats"] = median_stats
+
+    return context
+
+
+async def get_llm_advice(
+    analysis: MatchAnalysis,
+    *,
+    llm: LLMClient,
+    match_repo: MatchAnalysisRepository | None = None,
+    user_id: int | None = None,
+) -> str:
+    """Получить персональный LLM-совет по матчу.
+
+    Args:
+        analysis: Результат анализа матча.
+        llm: Клиент LLM API.
+        match_repo: Репозиторий для сохранения совета (опционально).
+        user_id: ID пользователя в БД (для сохранения).
+
+    Returns:
+        Текстовый совет от LLM.
+    """
+    context = _build_llm_context(analysis)
+    advice = await llm.summarize_match(context)
+
+    # Сохраняем совет в БД
+    if match_repo is not None and user_id is not None:
+        await match_repo.update_llm_summary(
+            user_id=user_id,
+            match_id=analysis.match_id,
+            llm_summary=advice,
+        )
+
+    return advice

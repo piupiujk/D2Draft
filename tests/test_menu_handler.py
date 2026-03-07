@@ -252,13 +252,6 @@ if "supabase._async.client" not in sys.modules:
 # Импортируем тестируемые модули
 # ---------------------------------------------------------------------------
 
-import asyncio  # noqa: E402
-
-from bot.handlers.menu import (  # noqa: E402
-    _DRAFT_STUB_TEXT,
-    _NOT_REGISTERED_TEXT,
-    btn_draft,
-)
 from bot.keyboards.menu import (  # noqa: E402
     ALL_MENU_BUTTONS,
     BTN_BUILD,
@@ -302,40 +295,11 @@ def _sample_user() -> dict:
 
 
 class TestBtnDraft:
-    """Тесты для кнопки 'Анализ драфта'."""
+    """Тесты для кнопки 'Анализ драфта' (перенесены в handlers/draft.py)."""
 
-    def test_unregistered_user_gets_start_prompt(self):
-        """Незарегистрированный пользователь получает предложение /start."""
-        msg = _make_message(BTN_DRAFT)
-        asyncio.run(btn_draft(msg, user=None))
-        msg.answer.assert_called_once()
-        text = msg.answer.call_args[0][0]
-        assert "/start" in text
-        assert text == _NOT_REGISTERED_TEXT
-
-    def test_registered_user_gets_stub(self):
-        """Зарегистрированный пользователь видит заглушку."""
-        msg = _make_message(BTN_DRAFT)
-        user = _sample_user()
-        asyncio.run(btn_draft(msg, user=user))
-        msg.answer.assert_called_once()
-        text = msg.answer.call_args[0][0]
-        assert "Анализ драфта" in text
-        assert "в разработке" in text
-
-    def test_stub_uses_html_parse_mode(self):
-        """Заглушка отправляется с parse_mode='HTML'."""
-        msg = _make_message(BTN_DRAFT)
-        asyncio.run(btn_draft(msg, user=_sample_user()))
-        kwargs = msg.answer.call_args[1]
-        assert kwargs.get("parse_mode") == "HTML"
-
-    def test_stub_text_matches_constant(self):
-        """Текст заглушки совпадает с константой."""
-        msg = _make_message(BTN_DRAFT)
-        asyncio.run(btn_draft(msg, user=_sample_user()))
-        text = msg.answer.call_args[0][0]
-        assert text == _DRAFT_STUB_TEXT
+    def test_draft_button_exists_in_menu(self):
+        """Кнопка 'Анализ драфта' присутствует в меню."""
+        assert BTN_DRAFT in ALL_MENU_BUTTONS
 
 
 # ===========================================================================

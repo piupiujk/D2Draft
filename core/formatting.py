@@ -179,7 +179,7 @@ def format_match_analysis(analysis: MatchAnalysis) -> str:
         f"⚔️ <b>Разбор матча #{analysis.match_id}</b>",
         "",
         f"{emoji} <b>{result_text}</b> | {duration_str}",
-        f"🦸 <b>{analysis.hero_name_en}</b>",
+        f"🦸 <b>{analysis.hero_name_ru}</b> ({analysis.hero_name_en})",
         f"🎯 Роль: {role_label}",
         f"📊 KDA: <b>{analysis.kills}/{analysis.deaths}/{analysis.assists}</b>",
     ]

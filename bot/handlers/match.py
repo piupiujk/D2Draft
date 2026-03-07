@@ -10,11 +10,12 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.keyboards.menu import BTN_MATCH
+from clients.llm import LLMClient
 from clients.opendota import OpenDotaClient
 from core.enums import Role
 from core.formatting import format_match_analysis
 from repositories.match_analysis import MatchAnalysisRepository
-from services.match_analysis import analyze_last_match
+from services.match_analysis import analyze_last_match, get_llm_advice
 
 logger = logging.getLogger(__name__)
 
@@ -108,11 +109,83 @@ async def process_ai_advice(
         )
         return
 
-    # Заглушка — будет реализовано в TASK-028
-    await callback.answer(
-        "Функция AI-совета в разработке. Скоро будет доступна!",
-        show_alert=True,
-    )
+    # Извлекаем match_id из callback_data
+    raw_match_id = callback.data[len(AI_ADVICE_CB_PREFIX):]  # type: ignore[index]
+    try:
+        match_id = int(raw_match_id)
+    except (ValueError, TypeError):
+        await callback.answer("Некорректные данные матча.", show_alert=True)
+        return
+
+    await callback.answer()
+
+    # Показываем сообщение о загрузке
+    msg = callback.message
+    if msg is None:
+        return
+
+    await msg.edit_text("⏳ Генерирую персональный AI-совет…", reply_markup=None)
+
+    steam_id = user.get("steam_id")
+    if not steam_id:
+        await msg.edit_text(_NO_STEAM_TEXT)
+        return
+
+    try:
+        steam_id_int = int(steam_id)
+    except (ValueError, TypeError):
+        await msg.edit_text(_ERROR_TEXT)
+        return
+
+    user_role = _get_user_role(user)
+    user_id = user.get("id")
+
+    try:
+        async with OpenDotaClient() as opendota:
+            match_repo = MatchAnalysisRepository()
+
+            # Заново получаем анализ матча для формирования контекста
+            analysis = await analyze_last_match(
+                steam_id=steam_id_int,
+                opendota=opendota,
+                match_repo=match_repo if user_id else None,
+                user_id=user_id,
+                user_role=user_role,
+            )
+
+            # Проверяем что это тот же матч
+            if analysis.match_id != match_id:
+                await msg.edit_text(
+                    "Матч изменился с момента анализа. "
+                    "Отправь /lastmatch чтобы разобрать текущий матч."
+                )
+                return
+
+            # Получаем LLM-совет
+            llm = _create_llm_client()
+            async with llm:
+                advice = await get_llm_advice(
+                    analysis,
+                    llm=llm,
+                    match_repo=match_repo if user_id else None,
+                    user_id=user_id,
+                )
+    except Exception:
+        logger.exception("Ошибка при генерации AI-совета для match_id=%s", match_id)
+        await msg.edit_text(
+            "Не удалось получить AI-совет. Попробуй позже."
+        )
+        return
+
+    # Формируем итоговый текст: анализ + совет
+    base_text = format_match_analysis(analysis)
+    full_text = f"{base_text}\n\n💡 <b>Совет от AI:</b>\n{advice}"
+
+    # Обрезаем до лимита Telegram (4096 символов)
+    if len(full_text) > 4096:
+        full_text = full_text[:4090] + "…"
+
+    await msg.edit_text(full_text, parse_mode="HTML")
 
 
 # ---------------------------------------------------------------------------
@@ -199,3 +272,13 @@ def _get_user_role(user: dict[str, Any]) -> Role | None:
         return Role(int(role_val))
     except (ValueError, TypeError):
         return None
+
+
+def _create_llm_client() -> LLMClient:
+    """Создать LLM-клиент из конфигурации."""
+    from bot.config import settings
+
+    return LLMClient(
+        api_key=settings.LLM_API_KEY,
+        provider=settings.LLM_PROVIDER,
+    )

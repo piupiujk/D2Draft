@@ -550,12 +550,83 @@ class TestProcessAiAdvice:
         cb.answer.assert_called_once()
         assert "Premium" in cb.answer.call_args[0][0]
 
-    def test_premium_stub(self):
-        cb = _make_callback("ai_advice:123")
+    def test_invalid_match_id(self):
+        cb = _make_callback("ai_advice:abc")
         user = _sample_user()
         asyncio.run(process_ai_advice(cb, user=user, is_premium=True))
-        cb.answer.assert_called_once()
-        assert "разработке" in cb.answer.call_args[0][0]
+        # Первый вызов answer — сообщение о некорректных данных
+        assert cb.answer.call_count >= 1
+        assert "Некорректные" in cb.answer.call_args[0][0]
+
+    def test_no_steam_id(self):
+        cb = _make_callback("ai_advice:123")
+        cb.message = MagicMock()
+        cb.message.edit_text = AsyncMock()
+        user = {**_sample_user(), "steam_id": None}
+        asyncio.run(process_ai_advice(cb, user=user, is_premium=True))
+        cb.message.edit_text.assert_called()
+        assert "Steam" in cb.message.edit_text.call_args[0][0]
+
+    @patch("bot.handlers.match.get_llm_advice", new_callable=AsyncMock)
+    @patch("bot.handlers.match.analyze_last_match", new_callable=AsyncMock)
+    @patch("bot.handlers.match._create_llm_client")
+    @patch("bot.handlers.match.OpenDotaClient")
+    @patch("bot.handlers.match.MatchAnalysisRepository")
+    def test_premium_gets_advice(
+        self, mock_repo_cls, mock_od_cls, mock_llm_cls, mock_analyze, mock_advice
+    ):
+        analysis = _sample_analysis()
+        mock_analyze.return_value = analysis
+        mock_advice.return_value = "Отличная игра на керри! Советую фармить быстрее."
+
+        mock_od = MagicMock()
+        mock_od.__aenter__ = AsyncMock(return_value=mock_od)
+        mock_od.__aexit__ = AsyncMock(return_value=False)
+        mock_od_cls.return_value = mock_od
+
+        mock_llm = MagicMock()
+        mock_llm.__aenter__ = AsyncMock(return_value=mock_llm)
+        mock_llm.__aexit__ = AsyncMock(return_value=False)
+        mock_llm_cls.return_value = mock_llm
+
+        cb = _make_callback(f"ai_advice:{analysis.match_id}")
+        cb.message = MagicMock()
+        cb.message.edit_text = AsyncMock()
+        user = _sample_user()
+
+        asyncio.run(process_ai_advice(cb, user=user, is_premium=True))
+
+        # Проверяем что LLM-совет вызван
+        mock_advice.assert_called_once()
+        # Проверяем что результат содержит совет
+        last_call = cb.message.edit_text.call_args_list[-1]
+        text = last_call[0][0]
+        assert "Совет от AI" in text
+        assert "фармить быстрее" in text
+
+    @patch("bot.handlers.match.analyze_last_match", new_callable=AsyncMock)
+    @patch("bot.handlers.match._create_llm_client")
+    @patch("bot.handlers.match.OpenDotaClient")
+    @patch("bot.handlers.match.MatchAnalysisRepository")
+    def test_api_error_shows_message(
+        self, mock_repo_cls, mock_od_cls, mock_llm_cls, mock_analyze
+    ):
+        mock_analyze.side_effect = RuntimeError("API timeout")
+        mock_od = MagicMock()
+        mock_od.__aenter__ = AsyncMock(return_value=mock_od)
+        mock_od.__aexit__ = AsyncMock(return_value=False)
+        mock_od_cls.return_value = mock_od
+
+        cb = _make_callback("ai_advice:123")
+        cb.message = MagicMock()
+        cb.message.edit_text = AsyncMock()
+        user = _sample_user()
+
+        asyncio.run(process_ai_advice(cb, user=user, is_premium=True))
+
+        last_call = cb.message.edit_text.call_args_list[-1]
+        text = last_call[0][0]
+        assert "Не удалось" in text
 
 
 # ========================================================================

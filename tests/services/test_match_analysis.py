@@ -26,12 +26,14 @@ from core.enums import MatchOutcome, Role  # noqa: E402
 from services.match_analysis import (  # noqa: E402
     MatchAnalysis,
     RoleMetric,
+    _build_llm_context,
     _build_metrics,
     _detect_role,
     _determine_result,
     _find_player_in_match,
     _scale_median_by_duration,
     analyze_last_match,
+    get_llm_advice,
 )
 
 # ---------------------------------------------------------------------------
@@ -482,6 +484,7 @@ class TestAnalyzeLastMatch:
 
     def test_saves_to_repo_when_provided(self):
         repo = AsyncMock()
+        repo.get_by_match_id = AsyncMock(return_value=None)
         repo.insert = AsyncMock(return_value={"id": 1})
         opendota = self._make_opendota()
         asyncio.run(
@@ -548,3 +551,123 @@ class TestAnalyzeLastMatch:
         result = asyncio.run(analyze_last_match(_STEAM_ID_64, opendota=opendota))
         for m in result.metrics:
             assert m.median >= 0, f"Медиана {m.name} должна быть >= 0"
+
+
+# ---------------------------------------------------------------------------
+# _build_llm_context
+# ---------------------------------------------------------------------------
+
+
+def _sample_analysis() -> MatchAnalysis:
+    """Вспомогательный объект MatchAnalysis для тестов LLM."""
+    return MatchAnalysis(
+        match_id=7000000001,
+        hero_id=1,
+        hero_name_ru="Анти-Маг",
+        hero_name_en="Anti-Mage",
+        role=Role.CARRY,
+        role_detected=True,
+        duration_sec=1800,
+        result=MatchOutcome.WIN,
+        kills=12,
+        deaths=3,
+        assists=8,
+        metrics=[
+            RoleMetric(name="gold_per_min", label_ru="GPM", value=650, median=550),
+            RoleMetric(name="xp_per_min", label_ru="XPM", value=700, median=600),
+        ],
+        player_stats=_PLAYER_DATA_CARRY,
+    )
+
+
+class TestBuildLLMContext:
+    def test_basic_fields(self):
+        analysis = _sample_analysis()
+        ctx = _build_llm_context(analysis)
+        assert ctx["match_id"] == 7000000001
+        assert ctx["hero"] == "Анти-Маг"
+        assert ctx["role"] == 1
+        assert ctx["role_name"] == "Carry"
+        assert ctx["result"] == "win"
+        assert ctx["duration"] == 30.0
+        assert ctx["kills"] == 12
+        assert ctx["deaths"] == 3
+        assert ctx["assists"] == 8
+
+    def test_median_stats_included(self):
+        analysis = _sample_analysis()
+        ctx = _build_llm_context(analysis)
+        assert "median_stats" in ctx
+        assert ctx["median_stats"]["gold_per_min"] == 550
+        assert ctx["median_stats"]["xp_per_min"] == 600
+
+    def test_player_stats_metrics(self):
+        analysis = _sample_analysis()
+        ctx = _build_llm_context(analysis)
+        assert ctx["gold_per_min"] == 650
+        assert ctx["xp_per_min"] == 700
+        assert ctx["last_hits"] == 300
+        assert ctx["hero_damage"] == 25000
+
+    def test_support_role_name(self):
+        analysis = _sample_analysis()
+        analysis.role = Role.HARD_SUPPORT
+        ctx = _build_llm_context(analysis)
+        assert ctx["role_name"] == "Hard Support"
+
+
+# ---------------------------------------------------------------------------
+# get_llm_advice
+# ---------------------------------------------------------------------------
+
+
+class TestGetLLMAdvice:
+    def test_returns_advice_text(self):
+        analysis = _sample_analysis()
+        llm = AsyncMock()
+        llm.summarize_match = AsyncMock(return_value="Хорошая игра на керри!")
+        result = asyncio.run(get_llm_advice(analysis, llm=llm))
+        assert result == "Хорошая игра на керри!"
+        llm.summarize_match.assert_called_once()
+
+    def test_passes_context_to_llm(self):
+        analysis = _sample_analysis()
+        llm = AsyncMock()
+        llm.summarize_match = AsyncMock(return_value="совет")
+        asyncio.run(get_llm_advice(analysis, llm=llm))
+        call_args = llm.summarize_match.call_args[0][0]
+        assert call_args["hero"] == "Анти-Маг"
+        assert call_args["role"] == 1
+
+    def test_saves_to_repo(self):
+        analysis = _sample_analysis()
+        llm = AsyncMock()
+        llm.summarize_match = AsyncMock(return_value="совет AI")
+        repo = AsyncMock()
+        repo.update_llm_summary = AsyncMock(return_value={"id": 1})
+
+        asyncio.run(
+            get_llm_advice(analysis, llm=llm, match_repo=repo, user_id=42)
+        )
+
+        repo.update_llm_summary.assert_called_once_with(
+            user_id=42,
+            match_id=7000000001,
+            llm_summary="совет AI",
+        )
+
+    def test_no_save_without_repo(self):
+        analysis = _sample_analysis()
+        llm = AsyncMock()
+        llm.summarize_match = AsyncMock(return_value="совет")
+        result = asyncio.run(get_llm_advice(analysis, llm=llm))
+        assert result == "совет"
+
+    def test_no_save_without_user_id(self):
+        analysis = _sample_analysis()
+        llm = AsyncMock()
+        llm.summarize_match = AsyncMock(return_value="совет")
+        repo = AsyncMock()
+
+        asyncio.run(get_llm_advice(analysis, llm=llm, match_repo=repo))
+        repo.update_llm_summary.assert_not_called()

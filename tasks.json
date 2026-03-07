@@ -602,7 +602,7 @@
         "Шаг 3: Проверить сохранение в БД"
       ],
       "dependencies": ["TASK-017", "TASK-009", "TASK-024"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-029",

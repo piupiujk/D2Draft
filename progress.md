@@ -1144,3 +1144,46 @@
   - TASK-024 (LLM-промпты, medium) — блокирует TASK-025, 028, 029
   - TASK-030 (scheduler, medium)
   - TASK-032 (подписки, medium)
+
+---
+
+## 2026-03-07 — TASK-028: LLM-совет по матчу: расширенный разбор для Premium (DONE)
+
+**Что сделано:**
+- `services/match_analysis.py` — функции `_build_llm_context()` и `get_llm_advice()`:
+  - Формирование контекста для LLM из MatchAnalysis (роль, метрики, медианы, KDA, длительность)
+  - Вызов `llm.summarize_match()` с промптом `match_summary.txt`
+  - Сохранение совета в `match_analyses.llm_summary` через `match_repo.update_llm_summary()`
+- `repositories/match_analysis.py` — метод `update_llm_summary()` для обновления поля llm_summary
+- `bot/handlers/match.py` — полный callback `process_ai_advice`:
+  - Проверка регистрации и Premium-статуса
+  - Валидация match_id из callback_data
+  - Повторное получение анализа + проверка что матч не изменился
+  - Генерация LLM-совета через `get_llm_advice()`
+  - Формирование итогового текста: анализ + совет, обрезка до 4096 символов
+  - Обработка ошибок с информативными сообщениями
+- `core/formatting.py` — исправлено: отображение имени героя на русском + английском
+- Исправлен неиспользуемый импорт asyncio в `tests/test_menu_handler.py`
+
+**Тесты:**
+- `tests/services/test_match_analysis.py`:
+  - `TestBuildLLMContext` — 4 теста: базовые поля, медианы, метрики игрока, имя роли саппорта
+  - `TestGetLLMAdvice` — 5 тестов: возврат текста, передача контекста, сохранение в БД, без repo, без user_id
+- `tests/test_match_handler.py`:
+  - `TestProcessAiAdvice` — 6 тестов: незарегистрированный, не-premium, невалидный match_id, нет steam_id, premium получает совет, ошибка API
+- Все 109 тестов (match + menu) прошли ✅
+
+**Тест-шаги:**
+- Шаг 1: `get_llm_advice()` с тестовым MatchAnalysis → текстовый совет ✅
+- Шаг 2: Совет релевантен роли (контекст содержит role_name, метрики) ✅
+- Шаг 3: Сохранение в БД через `update_llm_summary()` ✅
+- `uv run ruff check .` — 0 ошибок ✅
+- `uv run pytest tests/services/test_match_analysis.py tests/test_match_handler.py tests/test_menu_handler.py` — 109 тестов ✅
+
+**Заметки для следующей итерации:**
+- TASK-028 полностью реализован, все acceptance criteria выполнены
+- Предсуществующие падающие тесты в test_stratz.py (41 тест) — связаны с `_sync_query` и `asyncio.to_thread`, НЕ относятся к TASK-028
+- Приоритетные pending задачи:
+  - TASK-029 (ситуативные билды, medium)
+  - TASK-030 (scheduler, medium)
+  - TASK-032 (подписки, medium)

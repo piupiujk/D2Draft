@@ -57,6 +57,22 @@ class MatchAnalysisRepository(BaseRepository):
             return None
         return response.data
 
+    async def update_llm_summary(
+        self, user_id: int, match_id: int, llm_summary: str
+    ) -> dict[str, Any] | None:
+        """Сохранить LLM-совет в существующую запись анализа матча."""
+        client = await self._get_client()
+        response = (
+            await client.table(self.TABLE)
+            .update({"llm_summary": llm_summary})
+            .eq("user_id", user_id)
+            .eq("match_id", match_id)
+            .execute()
+        )
+        if response.data:
+            return response.data[0]
+        return None
+
     async def get_latest(
         self, user_id: int, limit: int = 1
     ) -> list[dict[str, Any]]:
