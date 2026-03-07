@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 
 from bot.config import settings
 from bot.handlers.build import router as build_router
+from bot.handlers.draft import router as draft_router
 from bot.handlers.help import router as help_router
 from bot.handlers.match import router as match_router
 from bot.handlers.menu import router as menu_router
@@ -27,6 +28,7 @@ async def main() -> None:
     dp.include_router(start_router)
     dp.include_router(meta_router)
     dp.include_router(build_router)
+    dp.include_router(draft_router)
     dp.include_router(match_router)
     dp.include_router(profile_router)
     dp.include_router(settings_router)

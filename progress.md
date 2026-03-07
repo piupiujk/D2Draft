@@ -4,6 +4,53 @@
 
 ---
 
+## 2026-03-07 — TASK-027: Хендлер /draft: приём скриншота, распознавание, рекомендация пиков (DONE)
+
+**Что сделано:**
+- `bot/states/draft.py` — FSM-состояния: `waiting_screenshot`, `confirming_heroes`
+- `bot/handlers/draft.py` — полный хендлер /draft с Premium-гейтом и 5-шаговым flow:
+  - Команда /draft и кнопка «Анализ драфта» — проверка регистрации и premium
+  - Приём фото с валидацией размера (макс 10 МБ)
+  - Скачивание и распознавание через `services/draft.recognize_draft()`
+  - Показ распознанных героев с кнопками подтверждения / повтора (при низкой уверенности)
+  - Автоматический переход к рекомендациям при высокой уверенности
+  - Вывод 3-5 рекомендованных героев с причинами + inline-кнопки для билда
+  - Выбор героя → показ полного билда через `services/build.get_hero_build()`
+  - Сохранение анализа в БД через `DraftAnalysisRepository.insert()`
+- `bot/__main__.py` — зарегистрирован draft_router
+- `bot/handlers/menu.py` — убрана заглушка BTN_DRAFT (теперь обрабатывается в draft.py)
+
+**Тесты (tests/handlers/test_draft.py):**
+- `TestFormatRecognition` — 3 теста: полный драфт, needs_confirmation, без врагов
+- `TestFormatRecommendations` — 3 теста: базовый, пустая причина, обрезка длинного текста
+- `TestRecommendationsKeyboard` — 1 тест: создание кнопок с callback_data
+- `TestSteamToAccountId` — 4 теста: валидный ID, None, пустая строка, невалидный
+- `TestCmdDraft` — 3 теста: незарегистрированный, не-premium, premium входит в FSM
+- `TestBtnDraft` — 2 теста: незарегистрированный, не-premium
+- `TestProcessNonPhoto` — 1 тест: подсказка отправить фото
+- `TestRetryDraft` — 1 тест: возврат к ожиданию скриншота
+- `TestConfirmDraft` — 1 тест: незарегистрированный
+- `TestPickHeroBuild` — 2 теста: незарегистрированный, невалидные данные
+- Все 21 тест прошли ✅
+
+**Тест-шаги:**
+- Шаг 1: `/draft` как premium → запрос скриншота ✅
+- Шаг 2: Отправка скриншота → распознанные герои ✅
+- Шаг 3: Подтверждение → рекомендации пиков ✅
+- Шаг 4: Выбор героя → билд ✅
+- Шаг 5: `/draft` как free → сообщение о подписке ✅
+- `uv run ruff check .` — 0 ошибок ✅
+- `uv run pytest` — 66 тестов (handlers + services + core) ✅
+
+**Заметки для следующей итерации:**
+- TASK-027 разблокирует: TASK-040 (graceful degradation)
+- Хендлер draft использует DI для клиентов (stratz, opendota, llm) — совместимо с паттерном проекта
+- OpenDotaClient создаётся без async with, требует явного `await close()` (в отличие от StratzClient)
+- Ограничение скриншота 10 МБ через `validate_image_size()`
+- Callback-префиксы: `draft:confirm`, `draft:retry`, `draft_pick:<hero_id>`
+
+---
+
 ## 2026-03-07 — TASK-026: Сервис рекомендации пиков на основе драфта (DONE)
 
 **Что сделано:**

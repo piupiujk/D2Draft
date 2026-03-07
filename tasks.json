@@ -582,7 +582,7 @@
         "Шаг 5: Отправить /draft как free — получить сообщение о подписке"
       ],
       "dependencies": ["TASK-026", "TASK-015", "TASK-010"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-028",
