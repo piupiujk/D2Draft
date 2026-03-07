@@ -681,7 +681,7 @@
         "Шаг 4: Попытка доступа к premium-фиче без подписки — блокировка"
       ],
       "dependencies": ["TASK-005", "TASK-010"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-033",

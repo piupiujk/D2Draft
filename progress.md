@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-03-07 — TASK-032: Система подписок: активация, проверка, деактивация Premium (DONE)
+
+**Что сделано:**
+- `services/subscription.py` — сервис подписок с тремя функциями:
+  - `activate_premium(user_id, telegram_id, duration_days)` — создаёт запись в subscriptions и обновляет is_premium/premium_expires_at в users
+  - `check_premium(user_id)` — проверяет наличие активной непросроченной подписки через репозиторий
+  - `deactivate(subscription_id, telegram_id)` — деактивирует подписку (статус cancelled) и сбрасывает Premium-флаги в users
+- `bot/handlers/subscription.py` — полный хендлер /subscribe:
+  - Команда /subscribe — показ статуса подписки с inline-клавиатурой
+  - Для Free: кнопки «Premium на 30 дней» и «Premium на 365 дней» (заглушка оплаты)
+  - Для Premium: кнопки «Статус подписки» и «Отменить подписку»
+  - Подтверждение деактивации с кнопками «Да, отменить» / «Назад»
+  - Информация о Premium-функциях в тексте
+- `bot/__main__.py` — зарегистрирован subscription_router
+- Все функции используют DI (sub_repo/user_repo как параметры) для удобного мокирования
+
+**Тесты:**
+- `tests/services/test_subscription.py` (8 тестов):
+  - TestActivatePremium: создание подписки и обновление пользователя, 365-дневная подписка
+  - TestCheckPremium: нет подписки, активная, просроченная, без expires_at, невалидная дата
+  - TestDeactivate: деактивация + сброс Premium в users
+- `tests/handlers/test_subscription.py` (15 тестов):
+  - TestSubscriptionStatusText: текст для Premium и Free
+  - TestSubscriptionKb: кнопки для Free и Premium
+  - TestCmdSubscribe: незарегистрированный, Free, Premium
+  - TestActivateSubscription: активация 30/365 дней, незарегистрированный
+  - TestDeactivatePrompt: подтверждение, нет подписки
+  - TestConfirmDeactivate: успешная деактивация, нет активной подписки
+  - TestCancelDeactivate: возврат к меню
+
+**Проверки:** ruff check — All checks passed. pytest — 23 новых тестов passed.
+
+**Заметки для следующей итерации:**
+- Оплата — заглушка, интеграция с платёжной системой пока не реализована
+- Middleware subscription.py уже проверяет is_premium из users — сервис check_premium() нужен для проверки через таблицу subscriptions напрямую
+
+---
+
 ## 2026-03-07 — TASK-029: Ситуативная адаптация билдов под вражеский пик (Premium) (DONE)
 
 **Что сделано:**

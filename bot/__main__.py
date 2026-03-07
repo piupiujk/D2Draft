@@ -13,6 +13,7 @@ from bot.handlers.meta import router as meta_router
 from bot.handlers.profile import router as profile_router
 from bot.handlers.settings import router as settings_router
 from bot.handlers.start import router as start_router
+from bot.handlers.subscription import router as subscription_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.subscription import SubscriptionMiddleware
 from bot.middlewares.throttle import ThrottleMiddleware
@@ -32,6 +33,7 @@ async def main() -> None:
     dp.include_router(match_router)
     dp.include_router(profile_router)
     dp.include_router(settings_router)
+    dp.include_router(subscription_router)
     dp.include_router(help_router)
     dp.include_router(menu_router)
 
