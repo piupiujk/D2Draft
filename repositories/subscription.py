@@ -61,3 +61,16 @@ class SubscriptionRepository(BaseRepository):
             .execute()
         )
         return response.data[0]
+
+    async def get_expired_active(self) -> list[dict[str, Any]]:
+        """Получить активные подписки с истёкшим сроком действия."""
+        now = datetime.now(timezone.utc).isoformat()
+        client = await self._get_client()
+        response = (
+            await client.table(self.TABLE)
+            .select("*, users!inner(telegram_id)")
+            .eq("status", "active")
+            .lt("expires_at", now)
+            .execute()
+        )
+        return response.data

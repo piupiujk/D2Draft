@@ -4,6 +4,48 @@
 
 ---
 
+## 2026-03-08 — TASK-030: APScheduler: настройка и джобы (DONE)
+
+**Что сделано:**
+- `scheduler/jobs/expire_subscriptions.py` — джоб деактивации просроченных подписок:
+  - Находит все active подписки с истёкшим expires_at через `sub_repo.get_expired_active()`
+  - Ставит статус cancelled и сбрасывает is_premium/premium_expires_at в users
+  - Извлекает telegram_id из join-а `users!inner(telegram_id)`
+  - Обработка ошибок для каждой подписки отдельно (не падает на одном сбое)
+- `scheduler/jobs/patch_monitor.py` — джоб мониторинга новых патчей Dota 2:
+  - Получает последний патч через OpenDota `/api/constants/patch`
+  - Хранит последний известный патч в in-memory переменной `_last_known_patch`
+  - При первом запуске — инициализация без уведомлений
+  - При обнаружении нового патча — рассылка всем пользователям с notifications_enabled
+  - Формат уведомления: версия патча + призыв проверить /meta и /build
+- `scheduler/setup.py` — уже существовал, содержит все 4 джоба:
+  - `update_mmr` — ежедневно в 03:00 UTC
+  - `weekly_report` — по понедельникам в 10:00 UTC
+  - `patch_monitor` — каждые 6 часов
+  - `expire_subscriptions` — каждый час
+- `scheduler/jobs/update_mmr.py` — уже существовал (обновление MMR через OpenDota)
+- `scheduler/jobs/weekly_report.py` — уже существовал (еженедельный отчёт), убран неиспользуемый импорт `get_hero_by_id`
+- `bot/__main__.py` — интегрирован планировщик: `create_scheduler(bot).start()` при запуске, `scheduler.shutdown()` при остановке
+
+**Тесты:**
+- `tests/scheduler/test_jobs.py` (20 тестов):
+  - TestUpdateMmrJob (5): обновление MMR, пропуск при неизменённом/None MMR, пустой список, продолжение при ошибке одного пользователя
+  - TestExpireSubscriptionsJob (4): деактивация просроченных, пустой список, отсутствие telegram_id, продолжение при ошибке
+  - TestWeeklyReportJob (3): отправка отчётов, пропуск без steam_id, пустой список
+  - TestFormatWeeklyReport (2): базовый отчёт, отчёт с серией побед
+  - TestPatchMonitorJob (4): первый запуск, тот же патч, новый патч с уведомлениями, ошибка API
+  - TestFormatPatchAlert (1): содержимое уведомления
+  - TestCreateScheduler (1): проверка регистрации всех 4 джобов
+
+**Проверки:** ruff check — All checks passed. pytest — 20 новых тестов passed.
+
+**Заметки для следующей итерации:**
+- Падающие тесты в test_build_handler, test_meta_handler, test_stratz — предшествующие ошибки, не связаны с TASK-030
+- `_last_known_patch` хранится в памяти — при перезапуске бота первая проверка всегда инициализация
+- Для TASK-031 (сервис уведомлений) уже есть `_format_weekly_report` в weekly_report.py и `_format_patch_alert` в patch_monitor.py — можно вынести в services/notification.py
+
+---
+
 ## 2026-03-07 — TASK-032: Система подписок: активация, проверка, деактивация Premium (DONE)
 
 **Что сделано:**

@@ -17,6 +17,7 @@ from bot.handlers.subscription import router as subscription_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.subscription import SubscriptionMiddleware
 from bot.middlewares.throttle import ThrottleMiddleware
+from scheduler.setup import create_scheduler
 
 
 async def main() -> None:
@@ -43,10 +44,15 @@ async def main() -> None:
     dp.update.outer_middleware(AuthMiddleware())
     dp.update.outer_middleware(SubscriptionMiddleware())
 
+    # Планировщик задач
+    scheduler = create_scheduler(bot)
+    scheduler.start()
+
     logging.info("Бот запускается…")
     try:
         await dp.start_polling(bot)
     finally:
+        scheduler.shutdown(wait=False)
         await bot.session.close()
 
 

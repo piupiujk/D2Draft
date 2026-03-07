@@ -120,3 +120,25 @@ class UserRepository(BaseRepository):
             current_mmr=new_mmr,
             mmr_updated_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    async def get_all_with_steam(self) -> list[dict[str, Any]]:
+        """Получить всех пользователей с привязанным Steam ID."""
+        client = await self._get_client()
+        response = (
+            await client.table(self.TABLE)
+            .select("*")
+            .neq("steam_id", "null")
+            .execute()
+        )
+        return response.data
+
+    async def get_with_notifications(self) -> list[dict[str, Any]]:
+        """Получить пользователей с включёнными уведомлениями."""
+        client = await self._get_client()
+        response = (
+            await client.table(self.TABLE)
+            .select("*")
+            .eq("notifications_enabled", True)
+            .execute()
+        )
+        return response.data

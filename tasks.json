@@ -641,7 +641,7 @@
         "Шаг 3: Вызвать expire_subscriptions — просроченная подписка деактивирована"
       ],
       "dependencies": ["TASK-004", "TASK-005", "TASK-006"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-031",
