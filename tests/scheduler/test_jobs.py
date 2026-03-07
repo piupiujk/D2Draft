@@ -3,9 +3,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from scheduler.jobs.expire_subscriptions import expire_subscriptions_job
-from scheduler.jobs.patch_monitor import _format_patch_alert, patch_monitor_job
+from scheduler.jobs.patch_monitor import patch_monitor_job
 from scheduler.jobs.update_mmr import update_mmr_job
-from scheduler.jobs.weekly_report import _format_weekly_report, weekly_report_job
+from scheduler.jobs.weekly_report import weekly_report_job
+from services.notification import compose_patch_alert, compose_weekly_report
 
 # ---------------------------------------------------------------------------
 # update_mmr_job
@@ -205,6 +206,7 @@ class TestWeeklyReportJob:
         profile.current_mmr = 3000
         profile.mmr_history = []
         profile.winrate_7d = 55.0
+        profile.winrate_30d = 52.0
         profile.total_matches = 100
         profile.top_heroes = []
         profile.win_streak = 0
@@ -258,12 +260,13 @@ class TestFormatWeeklyReport:
         profile.current_mmr = 3000
         profile.mmr_history = []
         profile.winrate_7d = 55.5
+        profile.winrate_30d = 52.0
         profile.total_matches = 42
         profile.top_heroes = []
         profile.win_streak = 0
         profile.loss_streak = 0
 
-        text = _format_weekly_report(user, profile)
+        text = compose_weekly_report(user, profile)
 
         assert "TestPlayer" in text
         assert "3000" in text
@@ -276,12 +279,13 @@ class TestFormatWeeklyReport:
         profile.current_mmr = 5000
         profile.mmr_history = []
         profile.winrate_7d = 70.0
+        profile.winrate_30d = 65.0
         profile.total_matches = 10
         profile.top_heroes = []
         profile.win_streak = 5
         profile.loss_streak = 0
 
-        text = _format_weekly_report(user, profile)
+        text = compose_weekly_report(user, profile)
 
         assert "5" in text
         assert "🔥" in text
@@ -384,7 +388,7 @@ class TestFormatPatchAlert:
     """Тесты форматирования уведомления о патче."""
 
     def test_contains_patch_name(self):
-        text = _format_patch_alert("7.38")
+        text = compose_patch_alert("7.38")
 
         assert "7.38" in text
         assert "Новый патч" in text

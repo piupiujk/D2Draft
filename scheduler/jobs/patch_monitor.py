@@ -9,6 +9,7 @@ from aiogram import Bot
 
 from core.logging import get_logger
 from repositories.user import UserRepository
+from services.notification import compose_patch_alert
 
 logger = get_logger(__name__)
 
@@ -57,17 +58,6 @@ async def _fetch_latest_patch(client: httpx.AsyncClient | None = None) -> dict[s
             await client.aclose()
 
 
-def _format_patch_alert(patch_name: str) -> str:
-    """Сформировать текст уведомления о новом патче."""
-    lines = [
-        "🔄 <b>Новый патч Dota 2!</b>\n",
-        f"Версия: <b>{patch_name}</b>\n",
-        "Мета-герои и билды могли измениться.",
-        "Используй /meta и /build для актуальных данных!",
-    ]
-    return "\n".join(lines)
-
-
 async def patch_monitor_job(
     *,
     bot: Bot,
@@ -109,7 +99,7 @@ async def patch_monitor_job(
 
     # Уведомляем пользователей с включёнными уведомлениями
     users = await user_repo.get_with_notifications()
-    text = _format_patch_alert(patch_name)
+    text = compose_patch_alert(patch_name)
 
     sent = 0
     for user in users:

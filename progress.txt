@@ -1,3 +1,29 @@
+## 2026-03-08 — TASK-031: Сервис уведомлений: патч-алерты и еженедельные отчёты (DONE)
+
+**Что сделано:**
+- Создан `services/notification.py` — модуль формирования уведомлений:
+  - `compose_patch_alert(patch_name, hero_changes)` — HTML-сообщение о новом патче с поддержкой списка изменений героев
+  - `compose_weekly_report(user, profile)` — HTML еженедельный отчёт с расширенной информацией:
+    - MMR и динамика за неделю (📈/📉)
+    - Винрейт за 7 и 30 дней
+    - Лучший и худший герой (по винрейту, при ≥3 играх)
+    - Топ-3 героев с количеством игр и WR
+    - Серия побед/поражений (если ≥3)
+    - Автоматический совет на основе статистики (`_generate_tip`)
+  - Проверка пользователей с выключенными уведомлениями — через `user_repo.get_with_notifications()` в scheduler jobs
+
+- Интеграция в scheduler:
+  - `scheduler/jobs/weekly_report.py` — заменён inline `_format_weekly_report` → `compose_weekly_report` из `services/notification`
+  - `scheduler/jobs/patch_monitor.py` — заменён inline `_format_patch_alert` → `compose_patch_alert` из `services/notification`
+
+- Обновлены тесты `tests/scheduler/test_jobs.py`:
+  - Импорты обновлены на `services.notification`
+  - Добавлен `winrate_30d` в MagicMock профиля
+
+**Тесты:** ruff check — 0 ошибок, pytest — 755 passed, 33 failed (предсуществующие failures в test_stratz — не связаны с данной задачей).
+
+---
+
 ## 2026-03-08 — TASK-033: Логирование: структурированный логгер без PII (DONE)
 
 **Что сделано:**
