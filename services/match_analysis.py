@@ -10,7 +10,10 @@ from clients.opendota import MatchDetails, OpenDotaClient
 from clients.steam import steam_id_64_to_account_id
 from core.enums import MatchOutcome, Role
 from core.hero_mapping import get_hero_by_id
+from core.logging import get_logger
 from repositories.match_analysis import MatchAnalysisRepository
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Модели

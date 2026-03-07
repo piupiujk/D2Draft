@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -16,9 +15,10 @@ from clients.steam import steam_id_64_to_account_id
 from clients.stratz import StratzClient
 from core.enums import Role
 from core.formatting import format_meta_heroes
+from core.logging import get_logger
 from services.meta import get_meta_heroes, mmr_to_bracket
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="meta")
 

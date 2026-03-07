@@ -14,6 +14,10 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import ContentType, TelegramObject, Update
 
+from core.logging import get_logger
+
+logger = get_logger(__name__)
+
 # Лимиты по умолчанию
 DEFAULT_MESSAGE_LIMIT = 30  # текстовых сообщений в минуту
 DEFAULT_MESSAGE_WINDOW = 60  # окно в секундах
@@ -94,6 +98,9 @@ class ThrottleMiddleware(BaseMiddleware):
         bucket = self._image_bucket if is_image else self._message_bucket
 
         if bucket.is_exceeded(telegram_id, now):
+            logger.info(
+                "Throttle: user=%s, тип=%s", telegram_id, "image" if is_image else "text"
+            )
             await _send_throttle_warning(event, is_image=is_image)
             return None
 

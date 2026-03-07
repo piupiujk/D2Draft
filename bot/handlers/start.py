@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -16,10 +15,11 @@ from bot.keyboards.roles import ROLE_CB_PREFIX, parse_role_callback, role_select
 from bot.states.onboarding import OnboardingStates
 from clients.steam import SteamClient
 from core.exceptions import SteamProfileClosed
+from core.logging import get_logger
 from core.validators import validate_mmr, validate_steam_input
 from repositories.user import DuplicateUserError, UserRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="start")
 

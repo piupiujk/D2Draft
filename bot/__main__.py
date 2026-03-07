@@ -1,5 +1,4 @@
 import asyncio
-import logging
 
 from aiogram import Bot, Dispatcher
 
@@ -17,11 +16,14 @@ from bot.handlers.subscription import router as subscription_router
 from bot.middlewares.auth import AuthMiddleware
 from bot.middlewares.subscription import SubscriptionMiddleware
 from bot.middlewares.throttle import ThrottleMiddleware
+from core.logging import get_logger, setup_logging
 from scheduler.setup import create_scheduler
+
+logger = get_logger(__name__)
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
+    setup_logging()
 
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher()
@@ -48,7 +50,7 @@ async def main() -> None:
     scheduler = create_scheduler(bot)
     scheduler.start()
 
-    logging.info("Бот запускается…")
+    logger.info("Бот запускается…")
     try:
         await dp.start_polling(bot)
     finally:

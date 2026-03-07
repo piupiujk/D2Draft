@@ -9,8 +9,11 @@ from clients.opendota import OpenDotaClient, PlayerHeroStats, RecentMatch
 from clients.steam import steam_id_64_to_account_id
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
+from core.logging import get_logger
 from repositories.mmr_history import MmrHistoryRepository
 from services.meta import mmr_to_bracket
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Модели

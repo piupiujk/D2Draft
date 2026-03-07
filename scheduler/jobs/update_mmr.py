@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import logging
-
 from clients.opendota import OpenDotaClient
 from clients.steam import steam_id_64_to_account_id
+from core.logging import get_logger
 from repositories.mmr_history import MmrHistoryRepository
 from repositories.user import UserRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def update_mmr_job(

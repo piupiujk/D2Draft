@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import logging
-
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from core.logging import get_logger
 from scheduler.jobs.expire_subscriptions import expire_subscriptions_job
 from scheduler.jobs.patch_monitor import patch_monitor_job
 from scheduler.jobs.update_mmr import update_mmr_job
 from scheduler.jobs.weekly_report import weekly_report_job
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_scheduler(bot: Bot) -> AsyncIOScheduler:

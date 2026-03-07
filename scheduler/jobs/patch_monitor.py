@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import httpx
 from aiogram import Bot
 
+from core.logging import get_logger
 from repositories.user import UserRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Храним последний известный патч в памяти
 _last_known_patch: str | None = None

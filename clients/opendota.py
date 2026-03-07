@@ -10,6 +10,9 @@ from typing import Any
 import httpx
 
 from core.exceptions import APIRateLimited
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Модели ответов
@@ -246,6 +249,7 @@ class OpenDotaClient:
     async def _get(self, path: str) -> Any:
         """GET-запрос с rate limiting и retry."""
         url = f"{self._base_url}{path}"
+        logger.debug("OpenDota GET %s", path)
         last_exc: Exception | None = None
 
         for attempt in range(_MAX_RETRIES):

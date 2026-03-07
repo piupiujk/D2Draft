@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import Bot
 
 from clients.opendota import OpenDotaClient
+from core.logging import get_logger
 from repositories.mmr_history import MmrHistoryRepository
 from repositories.user import UserRepository
 from services.profile import get_user_profile
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _format_weekly_report(user: dict[str, Any], profile: Any) -> str:

@@ -9,6 +9,9 @@ from clients.opendota import OpenDotaClient, PlayerHeroStats
 from clients.stratz import MetaHeroStats, StratzClient
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Модели
@@ -117,10 +120,12 @@ async def get_meta_heroes(
     cached = _get_cached(key)
 
     if cached is None:
-        # Получаем мета-данные из Stratz
+        logger.debug("Кэш-промах мета-героев: role=%s, bracket=%s", role_val, bracket_val)
         raw_heroes = await stratz.get_meta_heroes(role, bracket)
         cached = _build_meta_list(raw_heroes, top_n)
         _set_cached(key, cached)
+    else:
+        logger.debug("Кэш-попадание мета-героев: role=%s, bracket=%s", role_val, bracket_val)
 
     # Обогащаем личным винрейтом, если есть account_id
     if opendota is not None and account_id is not None:

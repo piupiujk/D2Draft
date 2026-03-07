@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -14,10 +13,11 @@ from aiogram.types import (
     Message,
 )
 
+from core.logging import get_logger
 from repositories.subscription import SubscriptionRepository
 from services.subscription import activate_premium, deactivate
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="subscription")
 

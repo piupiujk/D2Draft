@@ -701,7 +701,7 @@
         "Шаг 3: Проверить что формат логов парсится (JSON valid)"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-034",

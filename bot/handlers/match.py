@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -14,10 +13,11 @@ from clients.llm import LLMClient
 from clients.opendota import OpenDotaClient
 from core.enums import Role
 from core.formatting import format_match_analysis
+from core.logging import get_logger
 from repositories.match_analysis import MatchAnalysisRepository
 from services.match_analysis import analyze_last_match, get_llm_advice
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="match")
 

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from core.logging import get_logger
 from repositories.subscription import SubscriptionRepository
 from repositories.user import UserRepository
+
+logger = get_logger(__name__)
 
 
 async def activate_premium(
@@ -51,6 +54,7 @@ async def activate_premium(
         premium_expires_at=expires_at.isoformat(),
     )
 
+    logger.info("Premium активирован: user_id=%s, план=%s, дней=%d", user_id, plan, duration_days)
     return subscription
 
 

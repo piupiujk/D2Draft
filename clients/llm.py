@@ -11,6 +11,9 @@ from typing import Any
 import httpx
 
 from core.exceptions import APIRateLimited
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Модели ответов
@@ -197,6 +200,7 @@ class LLMClient:
 
     async def summarize_match(self, stats_dict: dict[str, Any]) -> str:
         """Сгенерировать текстовый разбор матча."""
+        logger.debug("LLM summarize_match: provider=%s", self._provider)
         system = load_prompt("match_summary")
         if not system:
             system = (
@@ -229,6 +233,7 @@ class LLMClient:
 
     async def recognize_draft(self, image_bytes: bytes) -> DraftRecognition:
         """Распознать драфт из скриншота через Vision."""
+        logger.debug("LLM recognize_draft: размер=%d байт", len(image_bytes))
         system = load_prompt("draft_recognition")
         if not system:
             system = (

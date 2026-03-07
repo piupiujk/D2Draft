@@ -7,7 +7,10 @@ from typing import Any, Awaitable, Callable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Update
 
+from core.logging import get_logger
 from repositories.user import UserRepository
+
+logger = get_logger(__name__)
 
 
 class AuthMiddleware(BaseMiddleware):

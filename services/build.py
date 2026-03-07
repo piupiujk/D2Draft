@@ -17,6 +17,9 @@ from clients.stratz import (
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
 from core.items import get_item_name_en, get_item_name_ru
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Модели

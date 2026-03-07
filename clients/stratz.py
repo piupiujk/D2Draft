@@ -12,6 +12,9 @@ import httpx
 
 from core.enums import RankBracket, Role
 from core.exceptions import APIRateLimited
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Маппинг enum-ов проекта -> Stratz API
@@ -566,6 +569,7 @@ class StratzClient:
         variables: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Выполнить GraphQL-запрос с rate limiting и retry."""
+        logger.debug("Stratz GraphQL запрос, variables=%s", variables)
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",

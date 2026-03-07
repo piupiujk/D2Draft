@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -20,10 +19,11 @@ from bot.states.settings import SettingsStates
 from clients.steam import SteamClient
 from core.enums import Role
 from core.exceptions import SteamProfileClosed
+from core.logging import get_logger
 from core.validators import validate_mmr, validate_steam_input
 from repositories.user import UserRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="settings")
 

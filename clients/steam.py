@@ -8,6 +8,9 @@ from urllib.parse import urlparse
 import httpx
 
 from core.exceptions import SteamProfileClosed
+from core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Константы

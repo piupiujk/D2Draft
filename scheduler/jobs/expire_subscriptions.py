@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import logging
-
+from core.logging import get_logger
 from repositories.subscription import SubscriptionRepository
 from repositories.user import UserRepository
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def expire_subscriptions_job(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -17,11 +16,12 @@ from clients.stratz import StratzClient
 from core.exceptions import HeroNotFound
 from core.formatting import format_build
 from core.hero_mapping import find_hero, get_hero_by_id
+from core.logging import get_logger
 from core.validators import validate_hero_query
 from services.build import get_hero_build
 from services.meta import mmr_to_bracket
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="build")
 

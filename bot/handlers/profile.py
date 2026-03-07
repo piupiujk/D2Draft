@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from aiogram import F, Router
@@ -12,11 +11,12 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from bot.keyboards.menu import BTN_PROFILE
 from clients.opendota import OpenDotaClient
 from core.formatting import format_profile
+from core.logging import get_logger
 from repositories.mmr_history import MmrHistoryRepository
 from repositories.user import UserRepository
 from services.profile import get_user_profile
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = Router(name="profile")
 

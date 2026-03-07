@@ -1,0 +1,32 @@
+## 2026-03-08 — TASK-033: Логирование: структурированный логгер без PII (DONE)
+
+**Что сделано:**
+- Создан `core/logging.py` — модуль структурированного логирования:
+  - `JsonFormatter` — форматирует логи в JSON с автоматическим маскированием PII
+  - `PiiFilter` — фильтр для маскирования PII при использовании key=value формата
+  - `mask_value()` — маскирует числовые ID, оставляя последние 4 символа (***5678)
+  - `mask_hash()` — возвращает короткий SHA-256 хеш для анонимной идентификации
+  - Автообнаружение Steam ID (76561198...) и telegram_id в строках
+  - Маскирование PII-ключей в dict-аргументах логирования
+  - `setup_logging()` — настройка корневого логгера (JSON или key=value формат)
+  - `get_logger()` — фабрика для получения именованного логгера
+  - Понижение шума библиотечных логгеров (httpx, aiogram, apscheduler)
+
+- Интеграция во все модули проекта (замена `import logging` → `from core.logging import get_logger`):
+  - `bot/__main__.py` — вызов `setup_logging()` при старте
+  - 8 хендлеров: start, build, draft, match, meta, profile, settings, subscription
+  - 5 scheduler джобов: setup, update_mmr, weekly_report, patch_monitor, expire_subscriptions
+  - 4 клиента: opendota (DEBUG для GET-запросов), stratz (DEBUG для GraphQL), llm (DEBUG для вызовов), steam
+  - 6 сервисов: meta (DEBUG для кэш-попаданий), build, draft, match_analysis, profile, subscription (INFO для активации premium)
+  - 2 middleware: auth, throttle (INFO при блокировке пользователя)
+
+- Уровни логирования:
+  - DEBUG: API-запросы (OpenDota GET, Stratz GraphQL, LLM вызовы), кэш-операции
+  - INFO: действия пользователей (регистрация, активация premium, throttle-блокировки)
+  - ERROR: ошибки (через logger.exception с traceback)
+
+**Тесты:** ruff check — 0 ошибок, pytest — все ранее проходившие тесты продолжают работать (33 предсуществующих failure в test_stratz, test_build_handler, test_meta_handler, test_profile_handler не связаны с данной задачей).
+
+**Заметки для следующей итерации:**
+- Предсуществующие failures в тестах stratz: тесты мокают `client.post` (httpx), но `StratzClient._query` использует `asyncio.to_thread(_sync_query)` с cloudscraper — моки не перехватываются. Это нужно фиксить в TASK-039 (тесты).
+- Предсуществующие failures в тестах handler: форматирование (format_build, format_meta_heroes, format_profile) — вероятно нужно обновить в TASK-038.

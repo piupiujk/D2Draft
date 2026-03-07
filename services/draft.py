@@ -11,7 +11,10 @@ from clients.stratz import StratzClient
 from core.constants import HERO_BY_ID
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
+from core.logging import get_logger
 from services.meta import get_meta_heroes
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Порог уверенности
