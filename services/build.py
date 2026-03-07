@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 
+from clients.llm import LLMClient, load_prompt
 from clients.stratz import (
     HeroBuildData,
     HeroGuideData,
@@ -238,3 +240,103 @@ def _convert_talents(talents: list[TalentInfo]) -> list[TalentChoice]:
     # Сортируем по слоту (порядок выбора талантов)
     result.sort(key=lambda tc: tc.slot)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Ситуативная адаптация билда (Premium)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SituationalBuild:
+    """Билд героя, адаптированный под вражеский состав."""
+
+    base_build: HeroBuild
+    adaptation_text: str  # Текст от LLM с пояснениями по адаптации
+
+
+async def get_situational_build(
+    hero_id: int,
+    role: Role | int | None = None,
+    bracket: RankBracket | str | None = None,
+    enemy_heroes: list[int] | None = None,
+    *,
+    stratz: StratzClient,
+    llm_client: LLMClient,
+) -> SituationalBuild:
+    """Получить билд героя, адаптированный под вражеский состав.
+
+    Args:
+        hero_id: ID героя.
+        role: Роль (1-5).
+        bracket: Ранговый брекет.
+        enemy_heroes: Список hero_id вражеских героев.
+        stratz: Клиент Stratz API.
+        llm_client: Клиент LLM для генерации пояснений.
+
+    Returns:
+        SituationalBuild со стандартным билдом и текстом адаптации.
+    """
+    # Получаем стандартный билд
+    base_build = await get_hero_build(
+        hero_id=hero_id,
+        role=role,
+        bracket=bracket,
+        stratz=stratz,
+    )
+
+    if not enemy_heroes:
+        return SituationalBuild(
+            base_build=base_build,
+            adaptation_text="Нет данных о вражеском составе для адаптации билда.",
+        )
+
+    # Собираем имена вражеских героев
+    enemies_info = []
+    for eid in enemy_heroes:
+        try:
+            edata = get_hero_by_id(eid)
+            enemies_info.append({"hero_id": eid, "name": edata.name_en})
+        except Exception:
+            enemies_info.append({"hero_id": eid, "name": f"Hero #{eid}"})
+
+    hero_data = get_hero_by_id(hero_id)
+
+    # Формируем контекст для LLM
+    role_val = int(Role(role)) if role is not None else 1
+    bracket_val = str(RankBracket(bracket)) if bracket is not None else "LEGEND"
+
+    llm_context = {
+        "hero": hero_data.name_en,
+        "hero_id": hero_id,
+        "role": role_val,
+        "bracket": bracket_val,
+        "standard_build": {
+            "core_items": [
+                {"name": item.name_en, "name_ru": item.name_ru}
+                for item in base_build.core_items
+            ],
+            "situational_items": [
+                {"name": item.name_en, "name_ru": item.name_ru}
+                for item in base_build.situational_items
+            ],
+        },
+        "enemy_heroes": enemies_info,
+    }
+
+    # Загружаем промпт и отправляем запрос к LLM
+    system_prompt = load_prompt("build_situational")
+    if not system_prompt:
+        system_prompt = (
+            "Ты — эксперт по предметным сборкам Dota 2. "
+            "Адаптируй стандартный билд героя под вражеский состав. "
+            "Отвечай на русском языке, кратко."
+        )
+
+    prompt = json.dumps(llm_context, ensure_ascii=False, indent=2)
+    response = await llm_client.complete(prompt, system=system_prompt, max_tokens=1024)
+
+    return SituationalBuild(
+        base_build=base_build,
+        adaptation_text=response.text,
+    )

@@ -23,7 +23,7 @@ from clients.stratz import StratzClient
 from core.enums import Role
 from core.validators import validate_image_size
 from repositories.draft_analysis import DraftAnalysisRepository
-from services.build import get_hero_build
+from services.build import get_hero_build, get_situational_build
 from services.draft import ValidatedDraft, recognize_draft, recommend_picks
 from services.meta import mmr_to_bracket
 
@@ -264,7 +264,9 @@ async def retry_draft(
 @router.callback_query(F.data.startswith(_CB_DRAFT_PICK))
 async def pick_hero_build(
     callback: CallbackQuery,
+    state: FSMContext,
     user: dict[str, Any] | None = None,
+    is_premium: bool = False,
     **_kwargs: Any,
 ) -> None:
     """Показ билда выбранного героя из рекомендаций."""
@@ -279,7 +281,16 @@ async def pick_hero_build(
         return
 
     await callback.answer()
-    await _show_hero_build(callback.message, user, hero_id)
+
+    # Извлекаем вражеских героев из FSM state для ситуативного билда
+    data = await state.get_data()
+    enemy_heroes = data.get("enemies_for_build", [])
+    await state.clear()
+
+    await _show_hero_build(
+        callback.message, user, hero_id,
+        enemy_heroes=enemy_heroes if is_premium else None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -369,13 +380,15 @@ async def _show_recommendations(
         except Exception:
             logger.warning("Не удалось сохранить анализ драфта в БД", exc_info=True)
 
-    await state.clear()
-
     if not recommendations:
+        await state.clear()
         await progress_msg.edit_text(
             "Не удалось подобрать рекомендации. Попробуй позже."
         )
         return
+
+    # Сохраняем enemies в state для ситуативного билда при выборе героя
+    await state.update_data(enemies_for_build=enemies)
 
     # Формируем вывод
     text = _format_recommendations(recommendations)
@@ -437,8 +450,9 @@ async def _show_hero_build(
     message: Message,
     user: dict[str, Any],
     hero_id: int,
+    enemy_heroes: list[int] | None = None,
 ) -> None:
-    """Показать билд выбранного героя."""
+    """Показать билд выбранного героя. Для Premium — с ситуативной адаптацией."""
     from core.formatting import format_build
     from core.hero_mapping import get_hero_by_id
 
@@ -454,19 +468,41 @@ async def _show_hero_build(
 
     try:
         stratz_token = _get_stratz_token()
-        async with StratzClient(token=stratz_token) as stratz:
-            build = await get_hero_build(
-                hero_id=hero_id,
-                role=role_val,
-                bracket=bracket,
-                stratz=stratz,
-            )
+
+        if enemy_heroes:
+            # Premium: ситуативный билд с адаптацией под врагов
+            llm = _create_llm_client()
+            async with StratzClient(token=stratz_token) as stratz:
+                sit_build = await get_situational_build(
+                    hero_id=hero_id,
+                    role=role_val,
+                    bracket=bracket,
+                    enemy_heroes=enemy_heroes,
+                    stratz=stratz,
+                    llm_client=llm,
+                )
+            text = format_build(sit_build.base_build)
+            # Добавляем блок с ситуативной адаптацией
+            adaptation = sit_build.adaptation_text.strip()
+            if adaptation:
+                text += "\n\n⚔️ <b>Адаптация под вражеский состав:</b>\n" + adaptation
+            # Обрезаем до лимита Telegram
+            if len(text) > 4096:
+                text = text[:4090] + "\n..."
+        else:
+            async with StratzClient(token=stratz_token) as stratz:
+                build = await get_hero_build(
+                    hero_id=hero_id,
+                    role=role_val,
+                    bracket=bracket,
+                    stratz=stratz,
+                )
+            text = format_build(build)
     except Exception:
         logger.exception("Ошибка при получении билда: hero_id=%s", hero_id)
         await message.answer("Не удалось получить билд. Попробуй позже.")
         return
 
-    text = format_build(build)
     await message.answer(text, parse_mode="HTML")
 
 

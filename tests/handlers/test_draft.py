@@ -257,8 +257,9 @@ class TestPickHeroBuild:
         callback = AsyncMock()
         callback.data = f"{_CB_DRAFT_PICK}1"
         callback.answer = AsyncMock()
+        state = AsyncMock()
 
-        await pick_hero_build(callback, user=None)
+        await pick_hero_build(callback, state=state, user=None)
         callback.answer.assert_called_once()
         assert callback.answer.call_args[1].get("show_alert") is True
 
@@ -268,7 +269,8 @@ class TestPickHeroBuild:
         callback = AsyncMock()
         callback.data = f"{_CB_DRAFT_PICK}abc"
         callback.answer = AsyncMock()
+        state = AsyncMock()
 
-        await pick_hero_build(callback, user={"id": 1})
+        await pick_hero_build(callback, state=state, user={"id": 1})
         callback.answer.assert_called_once()
         assert "Некорректный" in callback.answer.call_args[0][0]

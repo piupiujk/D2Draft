@@ -4,6 +4,7 @@ import asyncio
 import time
 from unittest.mock import AsyncMock
 
+from clients.llm import LLMResponse
 from clients.stratz import (
     AbilityInfo,
     HeroBuildData,
@@ -15,6 +16,7 @@ from core.items import get_item_name_en, get_item_name_ru
 from services.build import (
     BuildItem,
     HeroBuild,
+    SituationalBuild,
     SkillSlot,
     TalentChoice,
     _assemble_build,
@@ -22,6 +24,7 @@ from services.build import (
     _convert_items,
     _convert_talents,
     get_hero_build,
+    get_situational_build,
     invalidate_build_cache,
 )
 
@@ -269,13 +272,11 @@ class TestGetHeroBuild:
         stratz = _make_stratz_mock()
         asyncio.run(get_hero_build(1, role=1, bracket="LEGEND", stratz=stratz))
         stratz.get_hero_build.assert_called_once_with(1, 1, "LEGEND")
-        stratz.get_hero_guide.assert_called_once_with(1, 1, "LEGEND")
 
     def test_calls_without_role_bracket(self):
         stratz = _make_stratz_mock()
         asyncio.run(get_hero_build(1, stratz=stratz))
         stratz.get_hero_build.assert_called_once_with(1, None, None)
-        stratz.get_hero_guide.assert_called_once_with(1, None, None)
 
     def test_starting_items_filled(self):
         stratz = _make_stratz_mock()
@@ -287,15 +288,17 @@ class TestGetHeroBuild:
         result = asyncio.run(get_hero_build(1, stratz=stratz))
         assert len(result.core_items) > 0
 
-    def test_skill_order_filled(self):
+    def test_skill_order_empty_without_guide(self):
+        # Guide API временно отключён — скиллы пустые
         stratz = _make_stratz_mock()
         result = asyncio.run(get_hero_build(1, stratz=stratz))
-        assert len(result.skill_order) == 4
+        assert result.skill_order == []
 
-    def test_talents_filled(self):
+    def test_talents_empty_without_guide(self):
+        # Guide API временно отключён — таланты пустые
         stratz = _make_stratz_mock()
         result = asyncio.run(get_hero_build(1, stratz=stratz))
-        assert len(result.talents) == 4
+        assert result.talents == []
 
     def test_caching_second_call_no_api(self):
         stratz = _make_stratz_mock()
@@ -304,7 +307,6 @@ class TestGetHeroBuild:
         asyncio.run(get_hero_build(1, role=1, bracket="LEGEND", stratz=stratz))
         # API вызван только один раз
         assert stratz.get_hero_build.call_count == 1
-        assert stratz.get_hero_guide.call_count == 1
 
     def test_different_params_not_cached(self):
         stratz = _make_stratz_mock()
@@ -358,3 +360,88 @@ class TestItemMapping:
     def test_tango(self):
         assert get_item_name_en(44) == "Tango"
         assert get_item_name_ru(44) == "Танго"
+
+
+# ---------------------------------------------------------------------------
+# get_situational_build
+# ---------------------------------------------------------------------------
+
+
+def _make_llm_mock(response_text: str = "BKB обязателен против стунов.") -> AsyncMock:
+    llm = AsyncMock()
+    llm.complete = AsyncMock(
+        return_value=LLMResponse(text=response_text, model="test", usage_tokens=100)
+    )
+    return llm
+
+
+class TestGetSituationalBuild:
+    def setup_method(self):
+        invalidate_build_cache()
+
+    def test_returns_situational_build(self):
+        stratz = _make_stratz_mock()
+        llm = _make_llm_mock()
+        result = asyncio.run(
+            get_situational_build(
+                hero_id=1, role=1, bracket="LEGEND",
+                enemy_heroes=[2, 3, 4],
+                stratz=stratz, llm_client=llm,
+            )
+        )
+        assert isinstance(result, SituationalBuild)
+        assert isinstance(result.base_build, HeroBuild)
+        assert result.base_build.hero_id == 1
+
+    def test_adaptation_text_from_llm(self):
+        stratz = _make_stratz_mock()
+        llm = _make_llm_mock("Купи BKB против Lion и Sven.")
+        result = asyncio.run(
+            get_situational_build(
+                hero_id=1, role=1, bracket="LEGEND",
+                enemy_heroes=[26, 18],
+                stratz=stratz, llm_client=llm,
+            )
+        )
+        assert "BKB" in result.adaptation_text
+
+    def test_no_enemies_returns_default_text(self):
+        stratz = _make_stratz_mock()
+        llm = _make_llm_mock()
+        result = asyncio.run(
+            get_situational_build(
+                hero_id=1, role=1, bracket="LEGEND",
+                enemy_heroes=[],
+                stratz=stratz, llm_client=llm,
+            )
+        )
+        assert "Нет данных" in result.adaptation_text
+        # LLM не должен вызываться
+        llm.complete.assert_not_called()
+
+    def test_none_enemies_returns_default_text(self):
+        stratz = _make_stratz_mock()
+        llm = _make_llm_mock()
+        result = asyncio.run(
+            get_situational_build(
+                hero_id=1, role=1, bracket="LEGEND",
+                enemy_heroes=None,
+                stratz=stratz, llm_client=llm,
+            )
+        )
+        assert "Нет данных" in result.adaptation_text
+        llm.complete.assert_not_called()
+
+    def test_llm_called_with_system_prompt(self):
+        stratz = _make_stratz_mock()
+        llm = _make_llm_mock()
+        asyncio.run(
+            get_situational_build(
+                hero_id=1, role=1, bracket="LEGEND",
+                enemy_heroes=[2],
+                stratz=stratz, llm_client=llm,
+            )
+        )
+        llm.complete.assert_called_once()
+        call_kwargs = llm.complete.call_args
+        assert call_kwargs.kwargs.get("system") or call_kwargs[1].get("system")
