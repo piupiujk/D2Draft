@@ -85,3 +85,49 @@
 **Заметки для следующей итерации:**
 - 22 предсуществующих failures в test_stratz остаются — проблема с cloudscraper моками, фиксить в TASK-039.
 - Все 11 ранее фейливших тестов форматирования (test_build_handler, test_meta_handler, test_profile_handler) теперь проходят.
+
+---
+
+## 2026-03-08 — TASK-039: Тесты: conftest.py с фикстурами, базовые тесты (DONE)
+
+**Что сделано:**
+
+1. **Создан `tests/conftest.py`** — централизованные фикстуры:
+   - Мок модулей `supabase` и `bot.config` на уровне модуля (до импорта проекта)
+   - `mock_opendota` — AsyncMock OpenDotaClient с настроенными методами и тестовым PlayerProfile
+   - `mock_stratz` — MagicMock StratzClient с AsyncMock методами
+   - `mock_llm` — AsyncMock LLMClient с базовыми возвратами
+   - `test_user` — словарь тестового пользователя (формат Supabase row)
+   - `test_premium_user` — Premium-пользователь
+   - `mock_supabase_table` — мок таблицы Supabase с цепочкой select/insert/update
+   - `stratz_sync_response()` — хелпер для создания ответов _sync_query
+
+2. **Исправлены `tests/test_stratz.py`** — 22 ранее падавших теста:
+   - Заменены моки `httpx.AsyncClient.post` на моки `_sync_query` (cloudscraper)
+   - Обновлены тестовые данные `HERO_BUILD_RESPONSE` — новый формат `itemStartingPurchase`/`itemFullPurchase`
+   - Исправлен `test_rank_mapping_values` — проверяет `RANK_TO_STRATZ_BRACKET` (одиночные значения)
+   - Добавлен `test_rank_basic_mapping_values` — проверяет `RANK_TO_STRATZ_BRACKET_BASIC` (парные значения)
+   - Retry-тесты обновлены: сетевые ошибки мокаются через `Exception` вместо `httpx.ConnectError`
+
+3. **Создан `tests/clients/test_opendota.py`** — 20 тестов парсинга ответов API:
+   - `TestParsePlayerProfile` (4 теста) — полный профиль, опциональные поля, mmr_estimate=null
+   - `TestParseRecentMatches` (6 тестов) — полный матч, дефолтные значения, limit, is_win для radiant/dire
+   - `TestParsePlayerHeroes` (5 тестов) — строки→int, фильтрация hero_id=0, winrate
+   - `TestParseMatchDetails` (3 теста) — полные данные, дефолтные scores, пустой players
+
+4. **Добавлен `pytest-cov`** в dev-зависимости pyproject.toml
+
+**Результат:**
+- ruff check — 0 ошибок
+- pytest — **807 passed, 0 failed** (было 766 passed, 22 failed)
+- Покрытие services/ — **91%** (требование > 50%)
+- Все ранее падавшие тесты Stratz исправлены
+
+**Покрытие services/ по модулям:**
+- services/profile.py — 100%
+- services/meta.py — 98%
+- services/match_analysis.py — 98%
+- services/build.py — 96%
+- services/draft.py — 87%
+- services/subscription.py — 80%
+- services/notification.py — 62%

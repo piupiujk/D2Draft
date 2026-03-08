@@ -1,13 +1,18 @@
-"""Тесты для clients/stratz.py — StratzClient (GraphQL)."""
+"""Тесты для clients/stratz.py — StratzClient (GraphQL).
+
+Все тесты мокают _sync_query (cloudscraper), а не httpx.AsyncClient.post,
+потому что _query использует asyncio.to_thread(self._sync_query, ...).
+"""
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 
 from clients.stratz import (
     RANK_TO_STRATZ_BRACKET,
+    RANK_TO_STRATZ_BRACKET_BASIC,
     ROLE_TO_STRATZ_POSITION,
     HeroBuildData,
     HeroMatchup,
@@ -26,20 +31,27 @@ from core.exceptions import APIRateLimited
 # ---------------------------------------------------------------------------
 
 _TEST_TOKEN = "test-stratz-token-123"
-_GRAPHQL_URL = "https://api.stratz.com/graphql"
 
 
-def _json_response(data: object, status_code: int = 200) -> httpx.Response:
-    """Создать мок-ответ httpx."""
-    return httpx.Response(
-        status_code=status_code,
-        content=json.dumps(data).encode(),
-        headers={"content-type": "application/json"},
-        request=httpx.Request("POST", _GRAPHQL_URL),
-    )
+def _sync_ok(data: object, status_code: int = 200) -> dict:
+    """Возвращает ответ в формате _sync_query: {status_code, body, headers}."""
+    return {
+        "status_code": status_code,
+        "body": json.dumps(data),
+        "headers": {"content-type": "application/json"},
+    }
 
 
-# Ответ на запрос мета-героев
+def _make_client() -> StratzClient:
+    """Создать StratzClient с замоканным cloudscraper."""
+    client = StratzClient(token=_TEST_TOKEN)
+    return client
+
+
+# ---------------------------------------------------------------------------
+# Тестовые данные
+# ---------------------------------------------------------------------------
+
 META_HEROES_RESPONSE = {
     "data": {
         "heroStats": {
@@ -52,47 +64,33 @@ META_HEROES_RESPONSE = {
     }
 }
 
-# Ответ на запрос билда героя
+# Новый формат ответа: itemStartingPurchase + itemFullPurchase
 HERO_BUILD_RESPONSE = {
     "data": {
         "heroStats": {
-            "stats": [
-                {
-                    "heroId": 1,
-                    "matchCount": 15000,
-                    "winCount": 8250,
-                    "purchasePattern": {
-                        "startingItems": [
-                            {"itemId": 16, "matchCount": 5000, "winCount": 2800, "wasGiven": False},
-                            {"itemId": 17, "matchCount": 4500, "winCount": 2400, "wasGiven": True},
-                        ],
-                        "earlyGame": [
-                            {"itemId": 50, "matchCount": 4500, "winCount": 2500, "time": 480},
-                        ],
-                        "midGame": [
-                            {"itemId": 108, "matchCount": 3800, "winCount": 2100, "time": 1200},
-                            {"itemId": 139, "matchCount": 3000, "winCount": 1700, "time": 1500},
-                        ],
-                        "lateGame": [
-                            {"itemId": 116, "matchCount": 2000, "winCount": 1150, "time": 2400},
-                        ],
-                    },
-                }
-            ]
+            "itemStartingPurchase": [
+                {"itemId": 16, "matchCount": 5000, "winCount": 2800, "wasGiven": False},
+                {"itemId": 17, "matchCount": 4500, "winCount": 2400, "wasGiven": True},
+            ],
+            "itemFullPurchase": [
+                {"itemId": 50, "matchCount": 4500, "winCount": 2500, "time": 10},
+                {"itemId": 108, "matchCount": 3800, "winCount": 2100, "time": 18},
+                {"itemId": 139, "matchCount": 3000, "winCount": 1700, "time": 20},
+                {"itemId": 116, "matchCount": 2000, "winCount": 1150, "time": 30},
+            ],
         }
     }
 }
 
-# Пустой ответ на билд (герой без данных)
 EMPTY_BUILD_RESPONSE = {
     "data": {
         "heroStats": {
-            "stats": []
+            "itemStartingPurchase": [],
+            "itemFullPurchase": [],
         }
     }
 }
 
-# Ответ на запрос matchups
 MATCHUP_RESPONSE = {
     "data": {
         "heroStats": {
@@ -115,7 +113,6 @@ MATCHUP_RESPONSE = {
     }
 }
 
-# Ответ с GraphQL ошибками
 GRAPHQL_ERROR_RESPONSE = {
     "errors": [
         {"message": "Невалидный heroId"},
@@ -138,10 +135,18 @@ class TestEnumMapping:
             assert role in ROLE_TO_STRATZ_POSITION
 
     def test_rank_mapping_values(self) -> None:
-        assert RANK_TO_STRATZ_BRACKET[RankBracket.HERALD] == "HERALD_GUARDIAN"
-        assert RANK_TO_STRATZ_BRACKET[RankBracket.GUARDIAN] == "HERALD_GUARDIAN"
-        assert RANK_TO_STRATZ_BRACKET[RankBracket.DIVINE] == "DIVINE_IMMORTAL"
-        assert RANK_TO_STRATZ_BRACKET[RankBracket.IMMORTAL] == "DIVINE_IMMORTAL"
+        # RANK_TO_STRATZ_BRACKET — одиночные брекеты (для winWeek запросов)
+        assert RANK_TO_STRATZ_BRACKET[RankBracket.HERALD] == "HERALD"
+        assert RANK_TO_STRATZ_BRACKET[RankBracket.GUARDIAN] == "GUARDIAN"
+        assert RANK_TO_STRATZ_BRACKET[RankBracket.DIVINE] == "DIVINE"
+        assert RANK_TO_STRATZ_BRACKET[RankBracket.IMMORTAL] == "IMMORTAL"
+
+    def test_rank_basic_mapping_values(self) -> None:
+        # RANK_TO_STRATZ_BRACKET_BASIC — парные брекеты (для stats/builds запросов)
+        assert RANK_TO_STRATZ_BRACKET_BASIC[RankBracket.HERALD] == "HERALD_GUARDIAN"
+        assert RANK_TO_STRATZ_BRACKET_BASIC[RankBracket.GUARDIAN] == "HERALD_GUARDIAN"
+        assert RANK_TO_STRATZ_BRACKET_BASIC[RankBracket.DIVINE] == "DIVINE_IMMORTAL"
+        assert RANK_TO_STRATZ_BRACKET_BASIC[RankBracket.IMMORTAL] == "DIVINE_IMMORTAL"
 
     def test_role_mapping_values(self) -> None:
         assert ROLE_TO_STRATZ_POSITION[Role.CARRY] == "POSITION_1"
@@ -166,12 +171,9 @@ class TestRateLimiter:
 
 class TestGetMetaHeroes:
     def test_parses_meta_heroes(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(META_HEROES_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(META_HEROES_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE))
 
         assert len(result) == 3
@@ -189,50 +191,41 @@ class TestGetMetaHeroes:
         assert h.winrate == 0.0
 
     def test_sends_correct_variables(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(META_HEROES_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(META_HEROES_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         asyncio.run(client.get_meta_heroes(role=Role.MID, bracket=RankBracket.LEGEND))
 
-        call_args = mock_client.post.call_args
-        payload = call_args.kwargs.get("json") or call_args[1].get("json")
+        call_args = client._sync_query.call_args
+        # _sync_query(url, headers, payload)
+        payload = call_args[0][2]
         variables = payload["variables"]
-        assert variables["bracketIds"] == ["LEGEND_ANCIENT"]
+        assert variables["bracketIds"] == ["LEGEND"]
         assert variables["positionIds"] == ["POSITION_2"]
 
     def test_sends_bearer_token(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(META_HEROES_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(META_HEROES_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         asyncio.run(client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.HERALD))
 
-        call_args = mock_client.post.call_args
-        headers = call_args.kwargs.get("headers") or call_args[1].get("headers")
+        call_args = client._sync_query.call_args
+        headers = call_args[0][1]
         assert headers["Authorization"] == f"Bearer {_TEST_TOKEN}"
 
     def test_accepts_int_role_and_str_bracket(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(META_HEROES_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(META_HEROES_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_meta_heroes(role=1, bracket="DIVINE"))
 
         assert len(result) == 3
 
     def test_empty_response(self) -> None:
         empty = {"data": {"heroStats": {"winWeek": []}}}
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(return_value=_json_response(empty))
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(empty))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.HERALD))
 
         assert result == []
@@ -244,12 +237,9 @@ class TestGetMetaHeroes:
 
 class TestGetHeroBuild:
     def test_parses_hero_build(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(HERO_BUILD_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(HERO_BUILD_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(
             client.get_hero_build(hero_id=1, role=Role.CARRY, bracket=RankBracket.LEGEND)
         )
@@ -257,17 +247,14 @@ class TestGetHeroBuild:
         assert isinstance(result, HeroBuildData)
         assert result.hero_id == 1
         assert len(result.starting_items) == 2
-        assert len(result.early_game) == 1
-        assert len(result.mid_game) == 2
-        assert len(result.late_game) == 1
+        assert len(result.early_game) == 1   # time=10 < 15
+        assert len(result.mid_game) == 2     # time=18, time=20 (15..25)
+        assert len(result.late_game) == 1    # time=30 >= 25
 
     def test_starting_items_parsed_correctly(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(HERO_BUILD_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(HERO_BUILD_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_hero_build(hero_id=1))
 
         first_item = result.starting_items[0]
@@ -285,12 +272,9 @@ class TestGetHeroBuild:
         assert item.winrate == 0.0
 
     def test_items_sorted_by_match_count(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(HERO_BUILD_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(HERO_BUILD_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_hero_build(hero_id=1))
 
         # starting_items отсортированы по matchCount desc
@@ -299,12 +283,9 @@ class TestGetHeroBuild:
         assert result.mid_game[0].match_count >= result.mid_game[1].match_count
 
     def test_empty_stats_returns_empty_build(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(EMPTY_BUILD_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(EMPTY_BUILD_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_hero_build(hero_id=999))
 
         assert result.hero_id == 999
@@ -314,21 +295,17 @@ class TestGetHeroBuild:
         assert result.late_game == []
 
     def test_optional_role_and_bracket(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(HERO_BUILD_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(HERO_BUILD_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         # Без указания роли и брекета — не должно падать
         asyncio.run(client.get_hero_build(hero_id=1))
 
-        call_args = mock_client.post.call_args
-        payload = call_args.kwargs.get("json") or call_args[1].get("json")
+        call_args = client._sync_query.call_args
+        payload = call_args[0][2]
         variables = payload["variables"]
-        # Только heroId, без bracketBasicIds и positionId
         assert "bracketBasicIds" not in variables
-        assert "positionId" not in variables
+        assert "positionIds" not in variables
 
 
 # ---------------------------------------------------------------------------
@@ -337,12 +314,9 @@ class TestGetHeroBuild:
 
 class TestGetHeroMatchups:
     def test_parses_matchups(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(MATCHUP_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(MATCHUP_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_hero_matchups(hero_id=1))
 
         assert isinstance(result, HeroMatchupData)
@@ -351,29 +325,21 @@ class TestGetHeroMatchups:
         assert len(result.vs_heroes) == 2
 
     def test_with_heroes_sorted_by_synergy_desc(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(MATCHUP_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(MATCHUP_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_hero_matchups(hero_id=1))
 
-        # with_heroes отсортированы по synergy по убыванию
         assert result.with_heroes[0].synergy >= result.with_heroes[1].synergy
-        assert result.with_heroes[0].hero_id2 == 5  # synergy=3.5
+        assert result.with_heroes[0].hero_id2 == 5   # synergy=3.5
         assert result.with_heroes[1].hero_id2 == 10  # synergy=1.2
 
     def test_vs_heroes_sorted_by_synergy_asc(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(MATCHUP_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(MATCHUP_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         result = asyncio.run(client.get_hero_matchups(hero_id=1))
 
-        # vs_heroes отсортированы по synergy по возрастанию (самые плохие первые)
         assert result.vs_heroes[0].synergy <= result.vs_heroes[1].synergy
         assert result.vs_heroes[0].hero_id2 == 23  # synergy=-5.2
 
@@ -386,16 +352,13 @@ class TestGetHeroMatchups:
         assert m.winrate == 0.0
 
     def test_with_bracket_filter(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(MATCHUP_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(MATCHUP_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         asyncio.run(client.get_hero_matchups(hero_id=1, bracket=RankBracket.IMMORTAL))
 
-        call_args = mock_client.post.call_args
-        payload = call_args.kwargs.get("json") or call_args[1].get("json")
+        call_args = client._sync_query.call_args
+        payload = call_args[0][2]
         variables = payload["variables"]
         assert variables["bracketBasicIds"] == ["DIVINE_IMMORTAL"]
 
@@ -406,12 +369,9 @@ class TestGetHeroMatchups:
 
 class TestGraphQLErrors:
     def test_raises_on_graphql_errors(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(GRAPHQL_ERROR_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(GRAPHQL_ERROR_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         try:
             asyncio.run(client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE))
             raise AssertionError("Ожидали StratzGraphQLError")  # noqa: TRY301
@@ -420,17 +380,13 @@ class TestGraphQLErrors:
             assert len(exc.errors) == 2
 
     def test_graphql_error_message_joined(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            return_value=_json_response(GRAPHQL_ERROR_RESPONSE)
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok(GRAPHQL_ERROR_RESPONSE))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         try:
             asyncio.run(client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE))
             raise AssertionError("Ожидали StratzGraphQLError")  # noqa: TRY301
         except StratzGraphQLError as exc:
-            # Оба сообщения объединены через "; "
             assert "Невалидный heroId" in str(exc)
             assert "не существует" in str(exc)
 
@@ -441,26 +397,24 @@ class TestGraphQLErrors:
 
 class TestRetryLogic:
     def test_retries_on_500(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        resp_500 = _json_response({}, status_code=500)
-        resp_ok = _json_response(META_HEROES_RESPONSE)
-        mock_client.post = AsyncMock(side_effect=[resp_500, resp_ok])
+        client = _make_client()
+        resp_500 = _sync_ok({}, status_code=500)
+        resp_ok = _sync_ok(META_HEROES_RESPONSE)
+        client._sync_query = MagicMock(side_effect=[resp_500, resp_ok])
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         with patch("clients.stratz._RETRY_BACKOFF", 0.01):
             result = asyncio.run(
                 client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE)
             )
 
         assert len(result) == 3
-        assert mock_client.post.call_count == 2
+        assert client._sync_query.call_count == 2
 
     def test_raises_api_rate_limited_on_persistent_429(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        resp_429 = _json_response({"error": "rate limit"}, status_code=429)
-        mock_client.post = AsyncMock(return_value=resp_429)
+        client = _make_client()
+        resp_429 = _sync_ok({"error": "rate limit"}, status_code=429)
+        client._sync_query = MagicMock(return_value=resp_429)
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         try:
             with patch("clients.stratz._RETRY_BACKOFF", 0.01):
                 asyncio.run(
@@ -471,15 +425,14 @@ class TestRetryLogic:
             assert exc.service == "Stratz"
 
     def test_retries_on_network_error(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
+        client = _make_client()
+        client._sync_query = MagicMock(
             side_effect=[
-                httpx.ConnectError("сеть недоступна"),
-                _json_response(META_HEROES_RESPONSE),
+                Exception("сеть недоступна"),
+                _sync_ok(META_HEROES_RESPONSE),
             ]
         )
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         with patch("clients.stratz._RETRY_BACKOFF", 0.01):
             result = asyncio.run(
                 client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE)
@@ -488,30 +441,22 @@ class TestRetryLogic:
         assert len(result) == 3
 
     def test_raises_after_max_retries_on_network_error(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(
-            side_effect=httpx.ConnectError("сеть недоступна")
-        )
+        client = _make_client()
+        client._sync_query = MagicMock(side_effect=Exception("сеть недоступна"))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         try:
             with patch("clients.stratz._RETRY_BACKOFF", 0.01):
                 asyncio.run(
                     client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE)
                 )
-            raise AssertionError("Ожидали httpx.ConnectError")  # noqa: TRY301
-        except httpx.ConnectError:
-            pass
+            raise AssertionError("Ожидали Exception")  # noqa: TRY301
+        except Exception as exc:
+            assert "сеть недоступна" in str(exc)
 
     def test_raises_on_4xx_without_retry(self) -> None:
-        mock_client = AsyncMock(spec=httpx.AsyncClient)
-        resp_401 = httpx.Response(
-            status_code=401,
-            request=httpx.Request("POST", _GRAPHQL_URL),
-        )
-        mock_client.post = AsyncMock(return_value=resp_401)
+        client = _make_client()
+        client._sync_query = MagicMock(return_value=_sync_ok({}, status_code=401))
 
-        client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         try:
             asyncio.run(
                 client.get_meta_heroes(role=Role.CARRY, bracket=RankBracket.DIVINE)
@@ -519,7 +464,7 @@ class TestRetryLogic:
             raise AssertionError("Ожидали HTTPStatusError")  # noqa: TRY301
         except httpx.HTTPStatusError:
             # 401 не должен ретраиться — один вызов
-            assert mock_client.post.call_count == 1
+            assert client._sync_query.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -528,12 +473,16 @@ class TestRetryLogic:
 
 class TestContextManager:
     def test_close_does_not_close_external_client(self) -> None:
+        from unittest.mock import AsyncMock
+
         mock_client = AsyncMock(spec=httpx.AsyncClient)
         client = StratzClient(token=_TEST_TOKEN, client=mock_client)
         asyncio.run(client.close())
         mock_client.aclose.assert_not_called()
 
     def test_close_closes_internal_client(self) -> None:
+        from unittest.mock import AsyncMock
+
         with patch("clients.stratz.httpx.AsyncClient") as mock_cls:
             mock_instance = AsyncMock()
             mock_cls.return_value = mock_instance

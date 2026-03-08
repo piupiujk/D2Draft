@@ -825,7 +825,7 @@
         "Шаг 3: Проверить coverage > 50% для services/"
       ],
       "dependencies": ["TASK-017", "TASK-013"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-040",
