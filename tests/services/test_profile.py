@@ -23,6 +23,7 @@ if "bot.config" not in sys.modules:
     sys.modules["bot.config"] = _mock_config
 
 from clients.opendota import PlayerHeroStats, RecentMatch  # noqa: E402
+from core.cache import profile_cache  # noqa: E402
 from core.enums import RankBracket, Role  # noqa: E402
 from services.profile import (  # noqa: E402
     MmrPoint,
@@ -265,6 +266,9 @@ class TestCalcStreaks:
 
 
 class TestGetUserProfile:
+    def setup_method(self):
+        profile_cache.invalidate_all()
+
     def test_returns_user_profile(self):
         opendota = AsyncMock()
         opendota.get_player_heroes = AsyncMock(return_value=HERO_STATS)

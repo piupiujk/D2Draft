@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 
 from clients.opendota import OpenDotaClient, PlayerHeroStats
 from clients.stratz import MetaHeroStats, StratzClient
+from core.cache import meta_cache
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
 from core.logging import get_logger
@@ -54,35 +54,20 @@ class MetaHero:
 
 
 # ---------------------------------------------------------------------------
-# Кэш (in-memory с TTL)
+# Кэш (делегирован в core.cache.meta_cache)
 # ---------------------------------------------------------------------------
 
-_CACHE_TTL = 3600  # 1 час
-_cache: dict[str, tuple[float, list[MetaHero]]] = {}
+# Обратная совместимость: _cache ссылается на внутреннее хранилище meta_cache
+_cache = meta_cache._store
 
 
 def _cache_key(role: int, bracket: str) -> str:
     return f"meta:{role}:{bracket}"
 
 
-def _get_cached(key: str) -> list[MetaHero] | None:
-    entry = _cache.get(key)
-    if entry is None:
-        return None
-    ts, data = entry
-    if time.monotonic() - ts > _CACHE_TTL:
-        del _cache[key]
-        return None
-    return data
-
-
-def _set_cached(key: str, data: list[MetaHero]) -> None:
-    _cache[key] = (time.monotonic(), data)
-
-
 def invalidate_meta_cache() -> None:
     """Сбросить весь кэш мета-героев."""
-    _cache.clear()
+    meta_cache.invalidate_all()
 
 
 # ---------------------------------------------------------------------------
@@ -117,13 +102,13 @@ async def get_meta_heroes(
     key = _cache_key(role_val, bracket_val)
 
     # Проверяем кэш (без личной статистики)
-    cached = _get_cached(key)
+    cached = meta_cache.get(key)
 
     if cached is None:
         logger.debug("Кэш-промах мета-героев: role=%s, bracket=%s", role_val, bracket_val)
         raw_heroes = await stratz.get_meta_heroes(role, bracket)
         cached = _build_meta_list(raw_heroes, top_n)
-        _set_cached(key, cached)
+        meta_cache.set(key, cached)
     else:
         logger.debug("Кэш-попадание мета-героев: role=%s, bracket=%s", role_val, bracket_val)
 

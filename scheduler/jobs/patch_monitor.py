@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 from aiogram import Bot
 
+from core.cache import invalidate_all_caches
 from core.logging import get_logger
 from repositories.user import UserRepository
 from services.notification import compose_patch_alert
@@ -96,6 +97,9 @@ async def patch_monitor_job(
     # Обнаружен новый патч
     logger.info("Обнаружен новый патч: %s (был: %s)", patch_name, _last_known_patch)
     _last_known_patch = patch_name
+
+    # Сбрасываем все кэши — мета и билды изменились
+    invalidate_all_caches()
 
     # Уведомляем пользователей с включёнными уведомлениями
     users = await user_repo.get_with_notifications()

@@ -782,7 +782,7 @@
         "Шаг 3: Вызвать invalidate_all() — все данные сброшены"
       ],
       "dependencies": ["TASK-013"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-038",

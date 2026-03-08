@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass, field
 
 from clients.llm import LLMClient, load_prompt
@@ -14,6 +13,7 @@ from clients.stratz import (
     StratzClient,
     TalentInfo,
 )
+from core.cache import build_cache
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
 from core.items import get_item_name_en, get_item_name_ru
@@ -72,35 +72,20 @@ class HeroBuild:
 
 
 # ---------------------------------------------------------------------------
-# Кэш (in-memory с TTL)
+# Кэш (делегирован в core.cache.build_cache)
 # ---------------------------------------------------------------------------
 
-_CACHE_TTL = 3600  # 1 час
-_cache: dict[str, tuple[float, HeroBuild]] = {}
+# Обратная совместимость: _cache ссылается на внутреннее хранилище build_cache
+_cache = build_cache._store
 
 
 def _cache_key(hero_id: int, role: int | None, bracket: str | None) -> str:
     return f"build:{hero_id}:{role}:{bracket}"
 
 
-def _get_cached(key: str) -> HeroBuild | None:
-    entry = _cache.get(key)
-    if entry is None:
-        return None
-    ts, data = entry
-    if time.monotonic() - ts > _CACHE_TTL:
-        del _cache[key]
-        return None
-    return data
-
-
-def _set_cached(key: str, data: HeroBuild) -> None:
-    _cache[key] = (time.monotonic(), data)
-
-
 def invalidate_build_cache() -> None:
     """Сбросить весь кэш билдов."""
-    _cache.clear()
+    build_cache.invalidate_all()
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +116,7 @@ async def get_hero_build(
     bracket_val = str(RankBracket(bracket)) if bracket is not None else None
     key = _cache_key(hero_id, role_val, bracket_val)
 
-    cached = _get_cached(key)
+    cached = build_cache.get(key)
     if cached is not None:
         return cached
 
@@ -145,7 +130,7 @@ async def get_hero_build(
     result = _assemble_build(hero_id, hero_data.name_en, hero_data.name_ru,
                              build_data, guide_data)
 
-    _set_cached(key, result)
+    build_cache.set(key, result)
     return result
 
 

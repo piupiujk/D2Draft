@@ -7,6 +7,7 @@ from typing import Any
 
 from clients.opendota import OpenDotaClient, PlayerHeroStats, RecentMatch
 from clients.steam import steam_id_64_to_account_id
+from core.cache import profile_cache
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
 from core.logging import get_logger
@@ -106,6 +107,13 @@ async def get_user_profile(
 
     account_id = steam_id_64_to_account_id(int(steam_id))
 
+    # Проверяем кэш профиля (TTL 10 минут)
+    cache_key = f"profile:{account_id}"
+    cached = profile_cache.get(cache_key)
+    if cached is not None:
+        logger.debug("Кэш-попадание профиля: account_id=%s", account_id)
+        return cached
+
     # Параллельные запросы к OpenDota
     hero_stats = await opendota.get_player_heroes(account_id)
     recent_matches = await opendota.get_recent_matches(account_id, limit=100)
@@ -135,7 +143,7 @@ async def get_user_profile(
             for row in raw_history
         ]
 
-    return UserProfile(
+    result = UserProfile(
         current_mmr=current_mmr,
         rank_bracket=rank_bracket,
         main_role=main_role,
@@ -149,6 +157,9 @@ async def get_user_profile(
         total_matches=total_matches,
         personaname=user.get("username"),
     )
+
+    profile_cache.set(cache_key, result)
+    return result
 
 
 # ---------------------------------------------------------------------------

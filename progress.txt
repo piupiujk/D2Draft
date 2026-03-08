@@ -1,3 +1,44 @@
+## 2026-03-08 — TASK-037: Кэширование мета-данных: in-memory кэш с TTL (DONE)
+
+**Что сделано:**
+
+1. **Создан `core/cache.py`** — универсальный модуль кэширования:
+   - Класс `TTLCache` — in-memory кэш с настраиваемым TTL и методами `get()`, `set()`, `invalidate()`, `invalidate_all()`
+   - Использует `time.monotonic()` — устойчиво к изменению системного времени
+   - Глобальные экземпляры: `meta_cache` (TTL 1 час), `build_cache` (TTL 1 час), `profile_cache` (TTL 10 минут)
+   - `invalidate_all_caches()` — сброс всех кэшей одним вызовом
+
+2. **Рефакторинг `services/meta.py`** — удалён дублированный код кэша, используется `core.cache.meta_cache`
+
+3. **Рефакторинг `services/build.py`** — удалён дублированный код кэша, используется `core.cache.build_cache`
+
+4. **Добавлено кэширование в `services/profile.py`** — профиль OpenDota кэшируется с TTL 10 минут (ранее каждый запрос шёл в API)
+
+5. **Интеграция в `scheduler/jobs/patch_monitor.py`** — при обнаружении нового патча вызывается `invalidate_all_caches()`, сбрасывая устаревшие мету и билды
+
+6. **Обратная совместимость** — `_cache`, `invalidate_meta_cache()`, `invalidate_build_cache()` сохранены для существующих тестов
+
+7. **Создан `tests/test_cache.py`** — 24 теста:
+   - `TestTTLCacheBasic` (8 тестов) — get/set/invalidate/len/contains/overwrite
+   - `TestTTLCacheExpiry` (4 теста) — проверка истечения TTL и удаления записей
+   - `TestTTLCacheDataTypes` (3 теста) — кэш работает с list, dict, None
+   - `TestGlobalCaches` (5 тестов) — TTL значений, invalidate_all_caches, независимость кэшей
+   - `TestMetaCacheIntegration` (2 теста) — интеграция с services/meta.py
+   - `TestBuildCacheIntegration` (2 теста) — интеграция с services/build.py
+
+8. **Обновлён `tests/services/test_profile.py`** — добавлена очистка `profile_cache` перед каждым тестом
+
+**Результат:**
+- ruff check — 0 ошибок
+- pytest — **860 passed, 0 failed** (было 836)
+- Все acceptance criteria выполнены
+
+**Заметки для следующей итерации:**
+- Оставшаяся pending задача: TASK-036 (Docker) — low priority
+- Кэш можно расширить для других сервисов по необходимости
+
+---
+
 ## 2026-03-08 — TASK-040: Graceful degradation: обработка недоступности API и fallback-сценарии (DONE)
 
 **Что сделано:**
