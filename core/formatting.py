@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from clients.llm import PickRecommendation
     from services.build import HeroBuild
     from services.match_analysis import MatchAnalysis
     from services.meta import MetaHero
@@ -32,7 +33,7 @@ def format_meta_heroes(heroes: list[MetaHero], role_label: str) -> str:
         wr_pct = f"{h.winrate * 100:.1f}%"
         pr_pct = f"{h.pick_rate * 100:.1f}%"
 
-        line = f"{i}. <b>{h.name_en}</b>"
+        line = f"{i}. <b>{h.name_ru}</b> ({h.name_en})"
         line += f"\n   Винрейт: {wr_pct} | Пикрейт: {pr_pct} | Матчей: {h.match_count}"
 
         if h.personal_winrate is not None and h.personal_games is not None:
@@ -68,7 +69,7 @@ def format_build(build: HeroBuild) -> str:
         Строка с HTML-разметкой, длина <= 4096 символов.
     """
     lines: list[str] = [
-        f"🛡 <b>Билд: {build.name_en}</b>",
+        f"🛡 <b>Билд: {build.name_ru}</b> ({build.name_en})",
     ]
 
     if build.guide_winrate > 0:
@@ -79,7 +80,7 @@ def format_build(build: HeroBuild) -> str:
     # Стартовые предметы
     if build.starting_items:
         lines.append("🟢 <b>Стартовые предметы</b>")
-        items_text = ", ".join(it.name_en for it in build.starting_items)
+        items_text = ", ".join(it.name_ru for it in build.starting_items)
         lines.append(items_text)
         lines.append("")
 
@@ -92,7 +93,7 @@ def format_build(build: HeroBuild) -> str:
             if it.time is not None and it.time > 0:
                 minutes = it.time // 60
                 time_str = f" ~{minutes} мин"
-            parts = [f"{i}. {it.name_en}"]
+            parts = [f"{i}. {it.name_ru}"]
             if wr:
                 parts.append(wr)
             if time_str:
@@ -103,7 +104,7 @@ def format_build(build: HeroBuild) -> str:
     # Ситуативные предметы
     if build.situational_items:
         lines.append("🟡 <b>Ситуативные предметы</b>")
-        sit_names = ", ".join(it.name_en for it in build.situational_items)
+        sit_names = ", ".join(it.name_ru for it in build.situational_items)
         lines.append(sit_names)
         lines.append("")
 
@@ -315,7 +316,40 @@ def format_profile(profile: UserProfile) -> str:
         lines.append("🦸 <b>Топ герои</b>")
         for i, h in enumerate(profile.top_heroes, start=1):
             wr_pct = f"{h.winrate * 100:.1f}%"
-            lines.append(f"   {i}. {h.name_en} — {wr_pct} ({h.games} игр)")
+            lines.append(f"   {i}. {h.name_ru} — {wr_pct} ({h.games} игр)")
+
+    result = "\n".join(lines)
+
+    if len(result) > 4096:
+        result = result[:4090] + "\n..."
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# format_draft_recommendations — рекомендации пиков
+# ---------------------------------------------------------------------------
+
+
+def format_draft_recommendations(recommendations: list[PickRecommendation]) -> str:
+    """Форматировать рекомендации пиков для Telegram-сообщения.
+
+    Args:
+        recommendations: список PickRecommendation из clients/llm.py.
+
+    Returns:
+        Строка с HTML-разметкой, длина <= 4096 символов.
+    """
+    if not recommendations:
+        return "Нет рекомендаций по пикам."
+
+    lines: list[str] = ["🎯 <b>Рекомендации пиков</b>", ""]
+
+    for i, rec in enumerate(recommendations, start=1):
+        lines.append(f"<b>{i}. {rec.name_ru}</b>")
+        if rec.reason:
+            lines.append(f"   {rec.reason}")
+        lines.append("")
 
     result = "\n".join(lines)
 

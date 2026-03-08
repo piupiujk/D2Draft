@@ -804,7 +804,7 @@
         "Шаг 3: Проверить что HTML-разметка валидна"
       ],
       "dependencies": ["TASK-003"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-039",

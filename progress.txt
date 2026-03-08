@@ -56,3 +56,32 @@
 **Заметки для следующей итерации:**
 - Предсуществующие failures в тестах stratz: тесты мокают `client.post` (httpx), но `StratzClient._query` использует `asyncio.to_thread(_sync_query)` с cloudscraper — моки не перехватываются. Это нужно фиксить в TASK-039 (тесты).
 - Предсуществующие failures в тестах handler: форматирование (format_build, format_meta_heroes, format_profile) — вероятно нужно обновить в TASK-038.
+
+---
+
+## 2026-03-08 — TASK-038: Форматирование сообщений: все formatter-функции в core/formatting.py (DONE)
+
+**Что сделано:**
+- Исправлен `core/formatting.py` — все 5 formatter-функций теперь используют русские имена:
+  - `format_meta_heroes()` — героям выводятся `name_ru (name_en)` вместо только `name_en`
+  - `format_build()` — заголовок, стартовые, основные и ситуативные предметы используют `name_ru`
+  - `format_match_analysis()` — без изменений (уже использовал `hero_name_ru`)
+  - `format_profile()` — топ-герои отображаются как `name_ru` вместо `name_en`
+  - `format_draft_recommendations()` — **новая функция**, вынесена из `bot/handlers/draft.py` в `core/formatting.py`
+
+- Обновлён `bot/handlers/draft.py`:
+  - Удалена локальная `_format_recommendations()` — заменена на импорт `format_draft_recommendations` из `core/formatting.py`
+
+- Обновлён `tests/handlers/test_draft.py`:
+  - Импорт `_format_recommendations` заменён на `format_draft_recommendations` из `core.formatting`
+
+**Результат:**
+- Все 5 функций форматирования в `core/formatting.py` используют HTML parse_mode
+- Все сообщения ≤ 4096 символов (лимит Telegram)
+- Предметы и герои отображаются на русском языке (acceptance criteria PRD)
+
+**Тесты:** ruff check — 0 ошибок, pytest — 766 passed, 22 failed (предсуществующие failures только в test_stratz — cloudscraper vs httpx mock).
+
+**Заметки для следующей итерации:**
+- 22 предсуществующих failures в test_stratz остаются — проблема с cloudscraper моками, фиксить в TASK-039.
+- Все 11 ранее фейливших тестов форматирования (test_build_handler, test_meta_handler, test_profile_handler) теперь проходят.

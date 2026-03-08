@@ -7,11 +7,11 @@ import pytest
 from bot.handlers.draft import (
     _CB_DRAFT_PICK,
     _format_recognition,
-    _format_recommendations,
     _recommendations_keyboard,
     _steam_to_account_id,
 )
 from clients.llm import PickRecommendation
+from core.formatting import format_draft_recommendations
 from services.draft import ValidatedDraft
 
 # ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ class TestFormatRecommendations:
             PickRecommendation(hero_id=1, name_ru="Анти-Маг", reason="Хороший контрпик"),
             PickRecommendation(hero_id=2, name_ru="Axe", reason="Сильный в мете"),
         ]
-        text = _format_recommendations(recs)
+        text = format_draft_recommendations(recs)
         assert "Анти-Маг" in text
         assert "Axe" in text
         assert "Хороший контрпик" in text
@@ -79,7 +79,7 @@ class TestFormatRecommendations:
 
     def test_empty_reason(self):
         recs = [PickRecommendation(hero_id=1, name_ru="Анти-Маг", reason="")]
-        text = _format_recommendations(recs)
+        text = format_draft_recommendations(recs)
         assert "Анти-Маг" in text
 
     def test_truncates_long_text(self):
@@ -87,7 +87,7 @@ class TestFormatRecommendations:
             PickRecommendation(hero_id=i, name_ru=f"Герой {i}", reason="x" * 1000)
             for i in range(10)
         ]
-        text = _format_recommendations(recs)
+        text = format_draft_recommendations(recs)
         assert len(text) <= 4096
 
 

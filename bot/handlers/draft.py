@@ -391,7 +391,9 @@ async def _show_recommendations(
     await state.update_data(enemies_for_build=enemies)
 
     # Формируем вывод
-    text = _format_recommendations(recommendations)
+    from core.formatting import format_draft_recommendations
+
+    text = format_draft_recommendations(recommendations)
     kb = _recommendations_keyboard(recommendations)
     await progress_msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
 
@@ -417,20 +419,6 @@ def _format_recognition(draft: ValidatedDraft) -> str:
     return "\n".join(lines)
 
 
-def _format_recommendations(recommendations: list) -> str:
-    """Форматировать список рекомендаций пиков."""
-    lines: list[str] = ["🎯 <b>Рекомендации пиков</b>", ""]
-
-    for i, rec in enumerate(recommendations, start=1):
-        lines.append(f"<b>{i}. {rec.name_ru}</b>")
-        if rec.reason:
-            lines.append(f"   {rec.reason}")
-        lines.append("")
-
-    result = "\n".join(lines)
-    if len(result) > 4096:
-        result = result[:4090] + "\n..."
-    return result
 
 
 def _recommendations_keyboard(recommendations: list) -> InlineKeyboardMarkup:
