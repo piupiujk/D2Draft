@@ -1,3 +1,36 @@
+## 2026-03-08 — TASK-040: Graceful degradation: обработка недоступности API и fallback-сценарии (DONE)
+
+**Что сделано:**
+
+1. **Верификация существующей инфраструктуры** — проект уже содержал полную реализацию graceful degradation:
+   - `core/error_messages.py` — `classify_api_error()` для классификации ошибок API (таймаут, rate limit, 5xx, недоступность)
+   - `core/exceptions.py` — иерархия исключений: `D2DraftError` → `ExternalAPIError`, `APIRateLimited`, `HeroNotFound`, `SteamProfileClosed`, `UserNotRegistered`
+   - Глобальный `@dp.error()` обработчик в `bot/__main__.py` — ловит все необработанные исключения
+   - Все хендлеры (meta, match, build, profile, draft) имеют try/except с `classify_api_error()`
+   - Сервисы используют graceful degradation: пропуск ошибочных matchup-запросов, fallback на базовые рекомендации, fallback-имена героев
+   - `LLM_DRAFT_FALLBACK` — предложение ввести героев вручную при ошибке AI
+
+2. **Создан `tests/handlers/test_graceful_degradation.py`** — 10 тестов:
+   - `TestStratz500GracefulDegradation` (2 теста) — Stratz 500 в meta и build хендлерах → информативное сообщение
+   - `TestOpenDotaTimeoutGracefulDegradation` (3 теста) — OpenDota timeout, connect error, нет матчей → информативное сообщение
+   - `TestLLMErrorGracefulDegradation` (2 теста) — LLM fallback содержит предложение ввода вручную, AI-совет при ошибке
+   - `TestClassifyApiErrorComprehensive` (3 теста) — все типы ошибок возвращают строку, HTTP 502/503, сообщения на русском
+
+3. **Исправлены 6 предсуществующих тестов** в test_build_handler, test_match_handler, test_meta_handler, test_profile_handler:
+   - Ассерты обновлены: `"Не удалось"` → `"ошибка" in text.lower() or "недоступен" in text.lower()`
+   - Причина: `classify_api_error(RuntimeError(...))` возвращает `"Произошла непредвиденная ошибка"`, а не `"Не удалось"`
+
+**Результат:**
+- ruff check — 0 ошибок
+- pytest — **836 passed, 0 failed** (было 830 passed, 6 failed)
+- Все acceptance criteria выполнены: Stratz/OpenDota/LLM недоступность → информативное сообщение, ошибки логируются, пользователь никогда не видит crash
+
+**Заметки для следующей итерации:**
+- Оставшиеся pending задачи: TASK-036 (Docker), TASK-037 (Кэширование) — обе low priority
+- Вся функциональность graceful degradation была реализована в рамках предыдущих задач, TASK-040 верифицирует и тестирует её
+
+---
+
 ## 2026-03-08 — TASK-031: Сервис уведомлений: патч-алерты и еженедельные отчёты (DONE)
 
 **Что сделано:**

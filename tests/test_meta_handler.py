@@ -643,7 +643,7 @@ class TestShowMetaHeroes:
 
         msg.answer.assert_called_once()
         text = msg.answer.call_args[0][0]
-        assert "Не удалось" in text
+        assert "ошибка" in text.lower() or "недоступен" in text.lower()
 
     def test_no_steam_id_skips_opendota(self):
         """Без steam_id — OpenDota не вызывается."""

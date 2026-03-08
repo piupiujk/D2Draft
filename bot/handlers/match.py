@@ -12,6 +12,7 @@ from bot.keyboards.menu import BTN_MATCH
 from clients.llm import LLMClient
 from clients.opendota import OpenDotaClient
 from core.enums import Role
+from core.error_messages import classify_api_error
 from core.formatting import format_match_analysis
 from core.logging import get_logger
 from repositories.match_analysis import MatchAnalysisRepository
@@ -170,11 +171,9 @@ async def process_ai_advice(
                     match_repo=match_repo if user_id else None,
                     user_id=user_id,
                 )
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка при генерации AI-совета для match_id=%s", match_id)
-        await msg.edit_text(
-            "Не удалось получить AI-совет. Попробуй позже."
-        )
+        await msg.edit_text(classify_api_error(exc))
         return
 
     # Формируем итоговый текст: анализ + совет
@@ -236,9 +235,9 @@ async def _show_last_match(
             logger.warning("Ошибка анализа матча: %s", error_msg)
             await loading_msg.edit_text(_ERROR_TEXT)
         return
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка при анализе матча для steam_id=%s", steam_id)
-        await loading_msg.edit_text(_ERROR_TEXT)
+        await loading_msg.edit_text(classify_api_error(exc))
         return
 
     # Форматируем результат

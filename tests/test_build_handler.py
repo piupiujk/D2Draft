@@ -806,7 +806,7 @@ class TestShowBuild:
 
         msg.answer.assert_called_once()
         text = msg.answer.call_args[0][0]
-        assert "Не удалось" in text
+        assert "ошибка" in text.lower() or "недоступен" in text.lower()
 
     def test_no_mmr_uses_zero(self):
         """Без MMR — используется 0 (Herald)."""

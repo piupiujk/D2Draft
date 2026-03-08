@@ -10,6 +10,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from bot.keyboards.menu import BTN_PROFILE
 from clients.opendota import OpenDotaClient
+from core.error_messages import classify_api_error
 from core.formatting import format_profile
 from core.logging import get_logger
 from repositories.mmr_history import MmrHistoryRepository
@@ -123,9 +124,9 @@ async def process_update_mmr(
                 "MMR не удалось определить (возможно, профиль скрыт).",
                 show_alert=True,
             )
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка обновления MMR для user=%s", user.get("telegram_id"))
-        await callback.answer(_MMR_UPDATE_ERROR_TEXT, show_alert=True)
+        await callback.answer(classify_api_error(exc), show_alert=True)
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +163,9 @@ async def _build_profile_response(
                 mmr_repo=mmr_repo,
             )
         text = format_profile(profile)
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка загрузки профиля для user=%s", user.get("telegram_id"))
-        text = _ERROR_TEXT
+        text = classify_api_error(exc)
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[

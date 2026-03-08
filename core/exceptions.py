@@ -39,3 +39,15 @@ class UserNotRegistered(D2DraftError):
     def __init__(self, telegram_id: int) -> None:
         self.telegram_id = telegram_id
         super().__init__(f"Пользователь не зарегистрирован: {telegram_id}")
+
+
+class ExternalAPIError(D2DraftError):
+    """Ошибка внешнего API (Stratz, OpenDota, LLM)."""
+
+    def __init__(self, service: str, original: Exception | None = None) -> None:
+        self.service = service
+        self.original = original
+        msg = f"Ошибка сервиса {service}"
+        if original:
+            msg += f": {original}"
+        super().__init__(msg)

@@ -20,6 +20,7 @@ from clients.llm import LLMClient
 from clients.opendota import OpenDotaClient
 from clients.stratz import StratzClient
 from core.enums import Role
+from core.error_messages import LLM_DRAFT_FALLBACK, classify_api_error
 from core.logging import get_logger
 from core.validators import validate_image_size
 from repositories.draft_analysis import DraftAnalysisRepository
@@ -170,7 +171,7 @@ async def process_screenshot(
 
     except Exception:
         logger.exception("Ошибка при распознавании драфта")
-        await loading_msg.edit_text(_RECOGNITION_FAILED_TEXT)
+        await loading_msg.edit_text(LLM_DRAFT_FALLBACK)
         await state.clear()
         return
 
@@ -358,9 +359,9 @@ async def _show_recommendations(
                 if opendota is not None:
                     await opendota.close()
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка при получении рекомендаций")
-        await progress_msg.edit_text(_ERROR_TEXT)
+        await progress_msg.edit_text(classify_api_error(exc))
         await state.clear()
         return
 
@@ -486,9 +487,9 @@ async def _show_hero_build(
                     stratz=stratz,
                 )
             text = format_build(build)
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка при получении билда: hero_id=%s", hero_id)
-        await message.answer("Не удалось получить билд. Попробуй позже.")
+        await message.answer(classify_api_error(exc))
         return
 
     await message.answer(text, parse_mode="HTML")

@@ -13,6 +13,7 @@ from bot.keyboards.heroes import HERO_CB_PREFIX, parse_hero_callback
 from bot.keyboards.menu import BTN_BUILD
 from bot.states.build import BuildStates
 from clients.stratz import StratzClient
+from core.error_messages import classify_api_error
 from core.exceptions import HeroNotFound
 from core.formatting import format_build
 from core.hero_mapping import find_hero, get_hero_by_id
@@ -194,11 +195,11 @@ async def _show_build(
                 bracket=bracket,
                 stratz=stratz,
             )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Ошибка при получении билда: hero_id=%s", hero_id,
         )
-        await message.answer(_ERROR_TEXT)
+        await message.answer(classify_api_error(exc))
         return
 
     text = format_build(build)

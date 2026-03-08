@@ -14,6 +14,7 @@ from clients.opendota import OpenDotaClient
 from clients.steam import steam_id_64_to_account_id
 from clients.stratz import StratzClient
 from core.enums import Role
+from core.error_messages import classify_api_error
 from core.formatting import format_meta_heroes
 from core.logging import get_logger
 from services.meta import get_meta_heroes, mmr_to_bracket
@@ -207,9 +208,9 @@ async def _show_meta_heroes(
                     bracket=bracket,
                     stratz=stratz,
                 )
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка при получении мета-героев: role=%s", role.name)
-        await message.answer(_ERROR_TEXT)
+        await message.answer(classify_api_error(exc))
         return
 
     # Форматируем и отправляем текст

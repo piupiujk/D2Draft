@@ -626,7 +626,7 @@ class TestProcessAiAdvice:
 
         last_call = cb.message.edit_text.call_args_list[-1]
         text = last_call[0][0]
-        assert "Не удалось" in text
+        assert "ошибка" in text.lower() or "недоступен" in text.lower()
 
 
 # ========================================================================
@@ -749,7 +749,8 @@ class TestShowLastMatch:
         asyncio.run(_show_last_match(msg, user, False))
 
         loading.edit_text.assert_called_once()
-        assert "Не удалось" in loading.edit_text.call_args[0][0]
+        text = loading.edit_text.call_args[0][0]
+        assert "ошибка" in text.lower() or "недоступен" in text.lower()
 
     @patch("bot.handlers.match.analyze_last_match", new_callable=AsyncMock)
     @patch("bot.handlers.match.OpenDotaClient")

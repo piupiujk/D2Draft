@@ -572,7 +572,8 @@ class TestProcessUpdateMmr:
         asyncio.run(process_update_mmr(cb, user=user))
 
         cb.answer.assert_called_once()
-        assert "Не удалось" in cb.answer.call_args[0][0]
+        text = cb.answer.call_args[0][0]
+        assert "ошибка" in text.lower() or "недоступен" in text.lower()
 
     @patch("bot.handlers.profile.OpenDotaClient")
     def test_no_mmr_estimate(self, mock_od_cls):
@@ -656,7 +657,7 @@ class TestBuildProfileResponse:
 
         text, keyboard = asyncio.run(_build_profile_response(_sample_user()))
 
-        assert "Не удалось" in text
+        assert "ошибка" in text.lower() or "недоступен" in text.lower()
         # Клавиатура всегда присутствует (для повторной попытки)
         assert keyboard is not None
 

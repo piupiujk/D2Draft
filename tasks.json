@@ -845,7 +845,7 @@
         "Шаг 3: Замокать LLM на ошибку — предложен fallback"
       ],
       "dependencies": ["TASK-014", "TASK-018", "TASK-027"],
-      "status": "pending"
+      "status": "done"
     }
   ]
 }
