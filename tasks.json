@@ -763,7 +763,7 @@
         "Шаг 3: Проверить что .env переменные подхватываются"
       ],
       "dependencies": ["TASK-001"],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-037",

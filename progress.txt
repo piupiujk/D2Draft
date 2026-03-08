@@ -1,3 +1,36 @@
+## 2026-03-08 — TASK-036: Docker: Dockerfile и docker-compose для деплоя (DONE)
+
+**Что сделано:**
+
+1. **Создан `Dockerfile`** — multi-stage сборка:
+   - Этап 1 (builder): Python 3.11-slim + uv для установки production-зависимостей
+   - Этап 2 (финальный): копирование .venv из builder, исходного кода и промптов
+   - `HEALTHCHECK` — проверка импорта модуля `bot` каждые 30 секунд
+   - `PYTHONUNBUFFERED=1` для корректного вывода логов
+   - Точка входа: `python -m bot`
+
+2. **Создан `docker-compose.yml`** — два сервиса:
+   - `bot` — основной сервис, собирается из Dockerfile, использует `.env` файл
+   - `redis` — опциональный сервис (Redis 7 Alpine), включается через профиль `--profile redis`
+   - `depends_on` с `required: false` — бот запускается и без Redis
+
+3. **Создан `.dockerignore`** — исключает `.git`, `tests/`, `__pycache__`, `.env`, `.venv`, `uv.lock`, документацию
+
+**Результат:**
+- ruff check — 0 ошибок
+- pytest — **860 passed, 0 failed**
+- Все acceptance criteria выполнены
+
+**Запуск:**
+- Только бот: `docker compose up -d`
+- Бот + Redis: `docker compose --profile redis up -d`
+
+**Заметки:**
+- Все 40 задач проекта завершены (status: done)
+- Проект полностью готов к деплою
+
+---
+
 ## 2026-03-08 — TASK-037: Кэширование мета-данных: in-memory кэш с TTL (DONE)
 
 **Что сделано:**
