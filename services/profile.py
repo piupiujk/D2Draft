@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from clients.opendota import OpenDotaClient, PlayerHeroStats, RecentMatch
+from clients.opendota import OpenDotaClient, PlayerHeroStats, PlayerProfile as ODPlayerProfile, RecentMatch
 from clients.steam import steam_id_64_to_account_id
 from core.cache import profile_cache
 from core.enums import RankBracket, Role
@@ -44,7 +44,7 @@ class MmrPoint:
 class UserProfile:
     """Агрегированный профиль пользователя."""
 
-    current_mmr: int | None
+    current_mmr: int | None  # MMR введённый пользователем вручную
     rank_bracket: RankBracket | None
     main_role: Role | None
     overall_winrate: float | None  # 0.0 — 100.0
@@ -56,6 +56,9 @@ class UserProfile:
     mmr_history: list[MmrPoint] = field(default_factory=list)
     total_matches: int = 0
     personaname: str | None = None
+    rank_tier: int | None = None  # Медаль из OpenDota (например 23 = Guardian 3)
+    rank_mmr: int | None = None  # MMR по медали (приблизительный)
+    estimated_mmr: int | None = None  # computed_mmr от OpenDota
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +118,14 @@ async def get_user_profile(
         return cached
 
     # Параллельные запросы к OpenDota
+    player: ODPlayerProfile = await opendota.get_player(account_id)
     hero_stats = await opendota.get_player_heroes(account_id)
     recent_matches = await opendota.get_recent_matches(account_id, limit=100)
+
+    # MMR данные из OpenDota
+    od_rank_tier = player.rank_tier
+    od_rank_mmr = rank_tier_to_mmr(od_rank_tier)
+    od_estimated_mmr = player.mmr_estimate
 
     # Общий винрейт
     overall_winrate = _calc_overall_winrate(hero_stats)
@@ -155,7 +164,10 @@ async def get_user_profile(
         loss_streak=loss_streak,
         mmr_history=mmr_history,
         total_matches=total_matches,
-        personaname=user.get("username"),
+        personaname=player.personaname or user.get("username"),
+        rank_tier=od_rank_tier,
+        rank_mmr=od_rank_mmr,
+        estimated_mmr=od_estimated_mmr,
     )
 
     profile_cache.set(cache_key, result)
@@ -165,6 +177,31 @@ async def get_user_profile(
 # ---------------------------------------------------------------------------
 # Вспомогательные функции
 # ---------------------------------------------------------------------------
+
+
+def rank_tier_to_mmr(rank_tier: int | None) -> int | None:
+    """Конвертация rank_tier из OpenDota в приблизительный MMR.
+
+    rank_tier формат: первая цифра = медаль (1-8), вторая = звёзды (1-5).
+    Например: 23 = Guardian 3, 51 = Legend 1.
+    """
+    if rank_tier is None or rank_tier <= 0:
+        return None
+    medal = rank_tier // 10  # 1-8
+    stars = rank_tier % 10   # 1-5
+    # Приблизительная таблица MMR по медалям (актуальна на 2025-2026)
+    base_mmr = {
+        1: 0,      # Herald
+        2: 770,    # Guardian
+        3: 1540,   # Crusader
+        4: 2310,   # Archon
+        5: 3080,   # Legend
+        6: 3850,   # Ancient
+        7: 4620,   # Divine
+        8: 5420,   # Immortal
+    }
+    base = base_mmr.get(medal, 0)
+    return base + (stars - 1) * 154
 
 
 def _calc_overall_winrate(hero_stats: list[PlayerHeroStats]) -> float | None:

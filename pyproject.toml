@@ -14,7 +14,7 @@ dependencies = [
     "apscheduler>=3.10",
     "pydantic-settings>=2.0",
     "python-dotenv>=1.0",
-    "cloudscraper>=1.2.71",
+    "curl-cffi>=0.14",
 ]
 
 [project.optional-dependencies]

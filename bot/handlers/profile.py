@@ -14,7 +14,6 @@ from core.error_messages import classify_api_error
 from core.formatting import format_profile
 from core.logging import get_logger
 from repositories.mmr_history import MmrHistoryRepository
-from repositories.user import UserRepository
 from services.profile import get_user_profile
 
 logger = get_logger(__name__)
@@ -99,31 +98,19 @@ async def process_update_mmr(
         return
 
     try:
+        from core.cache import profile_cache
+
+        # Сбрасываем кэш профиля, чтобы подтянуть свежие данные из OpenDota
         from clients.steam import steam_id_64_to_account_id
 
         account_id = steam_id_64_to_account_id(int(steam_id))
+        profile_cache.invalidate(f"profile:{account_id}")
 
-        async with OpenDotaClient() as opendota:
-            player = await opendota.get_player(account_id)
+        await callback.answer(_MMR_UPDATED_TEXT, show_alert=False)
 
-        new_mmr = player.mmr_estimate
-        if new_mmr and new_mmr > 0:
-            telegram_id = user.get("telegram_id")
-            if telegram_id:
-                user_repo = UserRepository()
-                await user_repo.update_mmr(int(telegram_id), new_mmr)
-                user["current_mmr"] = new_mmr
-
-            await callback.answer(_MMR_UPDATED_TEXT, show_alert=False)
-
-            # Обновляем сообщение с новым профилем
-            if callback.message is not None:
-                await _show_profile_edit(callback.message, user)
-        else:
-            await callback.answer(
-                "MMR не удалось определить (возможно, профиль скрыт).",
-                show_alert=True,
-            )
+        # Обновляем сообщение с новым профилем (свежие данные из OpenDota)
+        if callback.message is not None:
+            await _show_profile_edit(callback.message, user)
     except Exception as exc:
         logger.exception("Ошибка обновления MMR для user=%s", user.get("telegram_id"))
         await callback.answer(classify_api_error(exc), show_alert=True)

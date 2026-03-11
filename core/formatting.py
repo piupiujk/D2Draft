@@ -80,7 +80,7 @@ def format_build(build: HeroBuild) -> str:
     # Стартовые предметы
     if build.starting_items:
         lines.append("🟢 <b>Стартовые предметы</b>")
-        items_text = ", ".join(it.name_ru for it in build.starting_items)
+        items_text = ", ".join(it.name_en for it in build.starting_items)
         lines.append(items_text)
         lines.append("")
 
@@ -93,7 +93,7 @@ def format_build(build: HeroBuild) -> str:
             if it.time is not None and it.time > 0:
                 minutes = it.time // 60
                 time_str = f" ~{minutes} мин"
-            parts = [f"{i}. {it.name_ru}"]
+            parts = [f"{i}. {it.name_en}"]
             if wr:
                 parts.append(wr)
             if time_str:
@@ -104,7 +104,7 @@ def format_build(build: HeroBuild) -> str:
     # Ситуативные предметы
     if build.situational_items:
         lines.append("🟡 <b>Ситуативные предметы</b>")
-        sit_names = ", ".join(it.name_ru for it in build.situational_items)
+        sit_names = ", ".join(it.name_en for it in build.situational_items)
         lines.append(sit_names)
         lines.append("")
 
@@ -236,6 +236,26 @@ _RANK_MEDAL: dict[str, str] = {
 }
 
 
+_RANK_TIER_MEDAL: dict[int, str] = {
+    1: "🥉 Herald",
+    2: "🥉 Guardian",
+    3: "🥈 Crusader",
+    4: "🥈 Archon",
+    5: "🥇 Legend",
+    6: "🥇 Ancient",
+    7: "🏆 Divine",
+    8: "👑 Immortal",
+}
+
+
+def _rank_tier_to_label(rank_tier: int) -> str:
+    """Конвертация rank_tier (например 23) в строку 'Guardian 3'."""
+    medal = rank_tier // 10
+    stars = rank_tier % 10
+    medal_name = _RANK_TIER_MEDAL.get(medal, f"Rank {medal}")
+    return f"{medal_name} {stars}" if stars > 0 else medal_name
+
+
 def format_profile(profile: UserProfile) -> str:
     """Форматировать профиль пользователя для Telegram-сообщения.
 
@@ -253,18 +273,16 @@ def format_profile(profile: UserProfile) -> str:
     lines.append("")
 
     # MMR и ранг
+    lines.append("🏅 <b>MMR</b>")
+    if profile.rank_tier is not None:
+        medal_str = _rank_tier_to_label(profile.rank_tier)
+        lines.append(f"   Медаль: {medal_str}")
+    if profile.rank_mmr is not None:
+        lines.append(f"   По медали: ~{profile.rank_mmr}")
+    if profile.estimated_mmr is not None:
+        lines.append(f"   Оценка OpenDota: ~{profile.estimated_mmr}")
     if profile.current_mmr is not None:
-        rank_str = ""
-        if profile.rank_bracket is not None:
-            bracket_name = (
-                profile.rank_bracket.value
-                if hasattr(profile.rank_bracket, "value")
-                else str(profile.rank_bracket)
-            )
-            rank_str = _RANK_MEDAL.get(bracket_name, bracket_name)
-        lines.append(f"🏅 MMR: <b>{profile.current_mmr}</b>")
-        if rank_str:
-            lines.append(f"   Медаль: {rank_str}")
+        lines.append(f"   Указан вручную: {profile.current_mmr}")
 
     # Роль
     if profile.main_role is not None:
@@ -316,7 +334,7 @@ def format_profile(profile: UserProfile) -> str:
         lines.append("🦸 <b>Топ герои</b>")
         for i, h in enumerate(profile.top_heroes, start=1):
             wr_pct = f"{h.winrate * 100:.1f}%"
-            lines.append(f"   {i}. {h.name_ru} — {wr_pct} ({h.games} игр)")
+            lines.append(f"   {i}. {h.name_en} — {wr_pct} ({h.games} игр)")
 
     result = "\n".join(lines)
 

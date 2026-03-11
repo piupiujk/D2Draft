@@ -14,6 +14,5 @@ prd/
 *.txt
 *.sh
 .venv
-uv.lock
 CLAUDE.md
 tasks.json

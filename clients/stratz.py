@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import cloudscraper
+from curl_cffi import requests as cffi_requests
 import httpx
 
 from core.enums import RankBracket, Role
@@ -329,7 +329,7 @@ class StratzClient:
         self._base_url = base_url
         self._external_client = client is not None
         self._client = client or httpx.AsyncClient(timeout=30.0)
-        self._scraper = cloudscraper.create_scraper()
+        self._session = cffi_requests.Session(impersonate="chrome")
         # Stratz лимиты: 20 запросов/сек
         self._limiter = _RateLimiter(max_tokens=20, refill_period=1.0)
 
@@ -559,8 +559,8 @@ class StratzClient:
         headers: dict[str, str],
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        """Синхронный запрос через cloudscraper (обход Cloudflare)."""
-        resp = self._scraper.post(url, json=payload, headers=headers, timeout=30)
+        """Синхронный запрос через curl_cffi (обход Cloudflare)."""
+        resp = self._session.post(url, json=payload, headers=headers, timeout=30)
         return {"status_code": resp.status_code, "body": resp.text, "headers": dict(resp.headers)}
 
     async def _query(

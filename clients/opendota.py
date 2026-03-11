@@ -155,6 +155,7 @@ class OpenDotaClient:
         """Получить профиль игрока по account_id (32-bit)."""
         data = await self._get(f"/players/{account_id}")
         profile = data.get("profile", {})
+        raw_mmr = data.get("computed_mmr") or (data.get("mmr_estimate") or {}).get("estimate")
         return PlayerProfile(
             account_id=account_id,
             personaname=profile.get("personaname"),
@@ -163,7 +164,7 @@ class OpenDotaClient:
             avatarfull=profile.get("avatarfull"),
             rank_tier=data.get("rank_tier"),
             leaderboard_rank=data.get("leaderboard_rank"),
-            mmr_estimate=(data.get("mmr_estimate") or {}).get("estimate"),
+            mmr_estimate=int(raw_mmr) if raw_mmr else None,
         )
 
     async def get_recent_matches(
