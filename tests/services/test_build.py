@@ -9,6 +9,7 @@ from clients.stratz import (
     AbilityInfo,
     HeroBuildData,
     HeroGuideData,
+    HeroMatchupData,
     ItemPurchase,
     TalentInfo,
 )
@@ -95,12 +96,9 @@ def _make_stratz_mock(
     guide_data: HeroGuideData | None = None,
 ) -> AsyncMock:
     stratz = AsyncMock()
-    stratz.get_hero_build = AsyncMock(
-        return_value=build_data or _make_build_data()
-    )
-    stratz.get_hero_guide = AsyncMock(
-        return_value=guide_data or _make_guide_data()
-    )
+    stratz.get_hero_build = AsyncMock(return_value=build_data or _make_build_data())
+    stratz.get_hero_guide = AsyncMock(return_value=guide_data or _make_guide_data())
+    stratz.get_hero_matchups = AsyncMock(return_value=HeroMatchupData(hero_id=1))
     return stratz
 
 
@@ -132,12 +130,11 @@ class TestConvertItems:
         result = _convert_items([])
         assert result == []
 
-    def test_unknown_item_id(self):
+    def test_unknown_item_id_filtered(self):
+        """Предметы с неизвестным ID отфильтровываются."""
         items = [ItemPurchase(item_id=99999, match_count=100, win_count=50)]
         result = _convert_items(items)
-        assert len(result) == 1
-        assert result[0].name_en == "Item #99999"
-        assert result[0].name_ru == "Предмет #99999"
+        assert len(result) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -175,35 +172,32 @@ class TestConvertTalents:
 
 class TestAssembleBuild:
     def test_returns_hero_build(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
         assert isinstance(build, HeroBuild)
         assert build.hero_id == 1
         assert build.name_en == "Anti-Mage"
         assert build.name_ru == "Анти-Маг"
 
     def test_starting_items_filled(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
         assert len(build.starting_items) == 3
         assert build.starting_items[0].item_id == 44  # Tango
 
-    def test_core_items_from_early_and_mid(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
-        # early (2) + mid (3) = 5 уникальных, все < 6 → все core
-        assert len(build.core_items) == 5
+    def test_core_items_sorted_by_time(self):
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
+        # 8 предметов всего, core = первые 6 по времени покупки
+        assert len(build.core_items) == 6
         core_ids = [i.item_id for i in build.core_items]
-        assert 63 in core_ids  # Power Treads
-        assert 176 in core_ids  # Manta Style
+        assert 63 in core_ids  # Power Treads (420)
+        assert 176 in core_ids  # Manta Style (1200)
+        # Предметы отсортированы по времени
+        times = [i.time for i in build.core_items if i.time is not None]
+        assert times == sorted(times)
 
-    def test_situational_items_from_late(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
-        # late items не дублируются с core → попадают в situational
-        sit_ids = [i.item_id for i in build.situational_items]
-        assert 196 in sit_ids  # Butterfly
-        assert 210 in sit_ids  # Satanic
+    def test_situational_items_are_remaining(self):
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
+        # Оставшиеся 2 предмета после 6 core
+        assert len(build.situational_items) == 2
 
     def test_no_duplicate_items(self):
         # Добавим дубликат: item_id=63 в mid_game (уже есть в early_game)
@@ -214,37 +208,33 @@ class TestAssembleBuild:
             mid_game=[ItemPurchase(item_id=63, match_count=100, win_count=50)],
             late_game=LATE_ITEMS,
         )
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                build_data, _make_guide_data())
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", build_data, _make_guide_data())
         # item_id=63 должен быть только один раз
-        all_ids = ([i.item_id for i in build.core_items]
-                   + [i.item_id for i in build.situational_items])
+        all_ids = [i.item_id for i in build.core_items] + [
+            i.item_id for i in build.situational_items
+        ]
         assert all_ids.count(63) == 1
 
     def test_skill_order_filled(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
         assert len(build.skill_order) == 4
         assert all(isinstance(s, SkillSlot) for s in build.skill_order)
         assert build.skill_order[0].slot == 2  # E первым
 
     def test_talents_filled(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
         assert len(build.talents) == 4
         assert all(isinstance(t, TalentChoice) for t in build.talents)
 
     def test_guide_winrate(self):
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                _make_build_data(), _make_guide_data())
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", _make_build_data(), _make_guide_data())
         # 2750/5000 = 0.55
         assert abs(build.guide_winrate - 0.55) < 0.01
 
     def test_empty_build_data(self):
         empty_build = HeroBuildData(hero_id=1)
         empty_guide = HeroGuideData(hero_id=1)
-        build = _assemble_build(1, "Anti-Mage", "Анти-Маг",
-                                empty_build, empty_guide)
+        build = _assemble_build(1, "Anti-Mage", "Анти-Маг", empty_build, empty_guide)
         assert build.starting_items == []
         assert build.core_items == []
         assert build.situational_items == []
@@ -288,17 +278,25 @@ class TestGetHeroBuild:
         result = asyncio.run(get_hero_build(1, stratz=stratz))
         assert len(result.core_items) > 0
 
-    def test_skill_order_empty_without_guide(self):
-        # Guide API временно отключён — скиллы пустые
+    def test_skill_order_from_guide(self):
+        # Guide API включён — скиллы заполняются из гайда
         stratz = _make_stratz_mock()
+        result = asyncio.run(get_hero_build(1, stratz=stratz))
+        assert len(result.skill_order) == 4
+
+    def test_talents_from_guide(self):
+        # Guide API включён — таланты заполняются из гайда
+        stratz = _make_stratz_mock()
+        result = asyncio.run(get_hero_build(1, stratz=stratz))
+        assert len(result.talents) == 4
+
+    def test_skill_order_empty_on_guide_error(self):
+        # При ошибке Guide API — скиллы пустые (graceful fallback)
+        stratz = _make_stratz_mock()
+        stratz.get_hero_guide = AsyncMock(side_effect=Exception("API error"))
+        invalidate_build_cache()
         result = asyncio.run(get_hero_build(1, stratz=stratz))
         assert result.skill_order == []
-
-    def test_talents_empty_without_guide(self):
-        # Guide API временно отключён — таланты пустые
-        stratz = _make_stratz_mock()
-        result = asyncio.run(get_hero_build(1, stratz=stratz))
-        assert result.talents == []
 
     def test_caching_second_call_no_api(self):
         stratz = _make_stratz_mock()
@@ -331,9 +329,14 @@ class TestGetHeroBuild:
 
 class TestInvalidateBuildCache:
     def test_clears_cache(self):
-        _cache["test_key"] = (time.monotonic(), HeroBuild(
-            hero_id=1, name_en="Test", name_ru="Тест",
-        ))
+        _cache["test_key"] = (
+            time.monotonic(),
+            HeroBuild(
+                hero_id=1,
+                name_en="Test",
+                name_ru="Тест",
+            ),
+        )
         assert len(_cache) > 0
         invalidate_build_cache()
         assert len(_cache) == 0
@@ -384,9 +387,12 @@ class TestGetSituationalBuild:
         llm = _make_llm_mock()
         result = asyncio.run(
             get_situational_build(
-                hero_id=1, role=1, bracket="LEGEND",
+                hero_id=1,
+                role=1,
+                bracket="LEGEND",
                 enemy_heroes=[2, 3, 4],
-                stratz=stratz, llm_client=llm,
+                stratz=stratz,
+                llm_client=llm,
             )
         )
         assert isinstance(result, SituationalBuild)
@@ -398,9 +404,12 @@ class TestGetSituationalBuild:
         llm = _make_llm_mock("Купи BKB против Lion и Sven.")
         result = asyncio.run(
             get_situational_build(
-                hero_id=1, role=1, bracket="LEGEND",
+                hero_id=1,
+                role=1,
+                bracket="LEGEND",
                 enemy_heroes=[26, 18],
-                stratz=stratz, llm_client=llm,
+                stratz=stratz,
+                llm_client=llm,
             )
         )
         assert "BKB" in result.adaptation_text
@@ -410,9 +419,12 @@ class TestGetSituationalBuild:
         llm = _make_llm_mock()
         result = asyncio.run(
             get_situational_build(
-                hero_id=1, role=1, bracket="LEGEND",
+                hero_id=1,
+                role=1,
+                bracket="LEGEND",
                 enemy_heroes=[],
-                stratz=stratz, llm_client=llm,
+                stratz=stratz,
+                llm_client=llm,
             )
         )
         assert "Нет данных" in result.adaptation_text
@@ -424,9 +436,12 @@ class TestGetSituationalBuild:
         llm = _make_llm_mock()
         result = asyncio.run(
             get_situational_build(
-                hero_id=1, role=1, bracket="LEGEND",
+                hero_id=1,
+                role=1,
+                bracket="LEGEND",
                 enemy_heroes=None,
-                stratz=stratz, llm_client=llm,
+                stratz=stratz,
+                llm_client=llm,
             )
         )
         assert "Нет данных" in result.adaptation_text
@@ -437,9 +452,12 @@ class TestGetSituationalBuild:
         llm = _make_llm_mock()
         asyncio.run(
             get_situational_build(
-                hero_id=1, role=1, bracket="LEGEND",
+                hero_id=1,
+                role=1,
+                bracket="LEGEND",
                 enemy_heroes=[2],
-                stratz=stratz, llm_client=llm,
+                stratz=stratz,
+                llm_client=llm,
             )
         )
         llm.complete.assert_called_once()

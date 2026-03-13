@@ -76,18 +76,17 @@ class TestMmrToBracket:
 
 
 class TestBuildMetaList:
-    def test_returns_sorted_by_winrate(self):
+    def test_returns_sorted_by_meta_score(self):
         result = _build_meta_list(STRATZ_META_HEROES, top_n=10)
         assert len(result) > 0
-        # Первый герой должен иметь наивысший винрейт
-        winrates = [h.winrate for h in result]
-        assert winrates == sorted(winrates, reverse=True)
+        # Результат отсортирован по meta_score (убывание)
+        scores = [h.meta_score for h in result]
+        assert scores == sorted(scores, reverse=True)
 
-    def test_first_hero_is_highest_winrate(self):
+    def test_first_hero_has_highest_meta_score(self):
         result = _build_meta_list(STRATZ_META_HEROES, top_n=10)
-        # hero_id=1 имеет 56% — наивысший
-        assert result[0].hero_id == 1
-        assert abs(result[0].winrate - 0.56) < 0.001
+        # Первый герой имеет наивысший meta_score
+        assert result[0].meta_score == max(h.meta_score for h in result)
 
     def test_pick_rate_calculated(self):
         result = _build_meta_list(STRATZ_META_HEROES, top_n=10)

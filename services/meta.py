@@ -49,6 +49,8 @@ class MetaHero:
     winrate: float  # Винрейт меты (0.0 — 1.0)
     pick_rate: float  # Пикрейт (доля от общего кол-ва матчей, 0.0 — 1.0)
     match_count: int  # Кол-во матчей
+    trend: float = 0.0  # Дельта винрейта (this_week - last_week)
+    meta_score: float = 0.0  # Комбинированный рейтинг для сортировки
     personal_winrate: float | None = None  # Личный винрейт (если привязан)
     personal_games: int | None = None  # Личное кол-во игр
 
@@ -136,6 +138,10 @@ def _build_meta_list(
         return []
 
     total_matches = sum(h.match_count for h in raw_heroes)
+    max_pick_rate = max(
+        (h.match_count / total_matches for h in raw_heroes if total_matches > 0),
+        default=1.0,
+    )
 
     heroes: list[MetaHero] = []
     for h in raw_heroes:
@@ -145,6 +151,8 @@ def _build_meta_list(
             continue
 
         pick_rate = h.match_count / total_matches if total_matches > 0 else 0.0
+        norm_pick = pick_rate / max_pick_rate if max_pick_rate > 0 else 0.0
+        meta_score = h.winrate * 0.7 + norm_pick * 0.3
 
         heroes.append(
             MetaHero(
@@ -154,11 +162,13 @@ def _build_meta_list(
                 winrate=h.winrate,
                 pick_rate=pick_rate,
                 match_count=h.match_count,
+                trend=h.trend,
+                meta_score=meta_score,
             )
         )
 
-    # Сортируем по винрейту (убывание)
-    heroes.sort(key=lambda m: m.winrate, reverse=True)
+    # Сортируем по meta_score (убывание)
+    heroes.sort(key=lambda m: m.meta_score, reverse=True)
     return heroes[:top_n]
 
 
@@ -180,6 +190,8 @@ def _enrich_with_personal(
                 winrate=h.winrate,
                 pick_rate=h.pick_rate,
                 match_count=h.match_count,
+                trend=h.trend,
+                meta_score=h.meta_score,
                 personal_winrate=personal.winrate if personal else None,
                 personal_games=personal.games if personal else None,
             )

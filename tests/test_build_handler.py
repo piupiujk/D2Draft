@@ -24,54 +24,70 @@ if "aiogram.types" not in sys.modules:
 _aiogram_types = sys.modules["aiogram.types"]
 
 if not hasattr(_aiogram_types, "KeyboardButton"):
+
     class _KeyboardButton:
         def __init__(self, text: str, **kwargs):
             self.text = text
+
     _aiogram_types.KeyboardButton = _KeyboardButton  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "ReplyKeyboardMarkup"):
+
     class _ReplyKeyboardMarkup:
         def __init__(self, keyboard=None, resize_keyboard=False, **kwargs):
             self.keyboard = keyboard or []
             self.resize_keyboard = resize_keyboard
             for k, v in kwargs.items():
                 setattr(self, k, v)
+
     _aiogram_types.ReplyKeyboardMarkup = _ReplyKeyboardMarkup  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "InlineKeyboardButton"):
+
     class _InlineKeyboardButton:
         def __init__(self, text: str, callback_data: str | None = None, **kwargs):
             self.text = text
             self.callback_data = callback_data
+
     _aiogram_types.InlineKeyboardButton = _InlineKeyboardButton  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "InlineKeyboardMarkup"):
+
     class _InlineKeyboardMarkup:
         def __init__(self, inline_keyboard=None, **kwargs):
             self.inline_keyboard = inline_keyboard or []
+
     _aiogram_types.InlineKeyboardMarkup = _InlineKeyboardMarkup  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "TelegramObject"):
+
     class _TelegramObject:
         pass
+
     _aiogram_types.TelegramObject = _TelegramObject  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "Update"):
+
     class _Update:
         def __init__(self):
             self.message = None
             self.callback_query = None
             self.inline_query = None
+
     _aiogram_types.Update = _Update  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "Message"):
+
     class _Message:
         pass
+
     _aiogram_types.Message = _Message  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_types, "CallbackQuery"):
+
     class _CallbackQuery:
         pass
+
     _aiogram_types.CallbackQuery = _CallbackQuery  # type: ignore[attr-defined]
 
 # aiogram.fsm
@@ -127,20 +143,25 @@ if "aiogram.filters" not in sys.modules:
 else:
     _filters = sys.modules["aiogram.filters"]
     if not hasattr(_filters, "Command"):
+
         class _Command:
             def __init__(self, *args, **kwargs):
                 pass
+
         _filters.Command = _Command  # type: ignore[attr-defined]
 
 # aiogram.Router и F
 _aiogram_mod = sys.modules["aiogram"]
 
 if not hasattr(_aiogram_mod, "Router"):
+
     class _PassthroughDecorator:
         """Декоратор-заглушка, который возвращает функцию без изменений."""
+
         def __call__(self, *args, **kwargs):
             def decorator(fn):
                 return fn
+
             if args and callable(args[0]):
                 return args[0]
             return decorator
@@ -157,17 +178,21 @@ if not hasattr(_aiogram_mod, "Router"):
     _aiogram_mod.Router = _Router  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_mod, "F"):
+
     class _FProxy:
         def __getattr__(self, name):
             return _FProxy()
+
         def __eq__(self, other):
             return _FProxy()
+
         def startswith(self, prefix):
             return _FProxy()
 
     _aiogram_mod.F = _FProxy()  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_mod, "Bot"):
+
     class _Bot:
         def __init__(self, **kwargs):
             self.session = MagicMock()
@@ -176,6 +201,7 @@ if not hasattr(_aiogram_mod, "Bot"):
     _aiogram_mod.Bot = _Bot  # type: ignore[attr-defined]
 
 if not hasattr(_aiogram_mod, "Dispatcher"):
+
     class _Dispatcher:
         def __init__(self, **kwargs):
             self.update = MagicMock()
@@ -274,6 +300,7 @@ from services.build import (  # noqa: E402
 # Фикстуры
 # ---------------------------------------------------------------------------
 
+
 def _make_message(text: str = "") -> MagicMock:
     """Создать мок Message."""
     msg = MagicMock()
@@ -325,24 +352,44 @@ def _sample_build() -> HeroBuild:
         name_en="Anti-Mage",
         name_ru="Анти-Маг",
         starting_items=[
-            BuildItem(item_id=44, name_en="Tango", name_ru="Танго",
-                      winrate=0.52, match_count=5000),
-            BuildItem(item_id=181, name_en="Quelling Blade",
-                      name_ru="Секач", winrate=0.53, match_count=5000),
+            BuildItem(item_id=44, name_en="Tango", name_ru="Танго", winrate=0.52, match_count=5000),
+            BuildItem(
+                item_id=181,
+                name_en="Quelling Blade",
+                name_ru="Секач",
+                winrate=0.53,
+                match_count=5000,
+            ),
         ],
         core_items=[
-            BuildItem(item_id=1, name_en="Battle Fury",
-                      name_ru="Батлфьюри", winrate=0.58, match_count=4000,
-                      time=900),
-            BuildItem(item_id=2, name_en="Manta Style",
-                      name_ru="Манта", winrate=0.61, match_count=3500,
-                      time=1500),
+            BuildItem(
+                item_id=1,
+                name_en="Battle Fury",
+                name_ru="Батлфьюри",
+                winrate=0.58,
+                match_count=4000,
+                time=15,
+            ),
+            BuildItem(
+                item_id=2,
+                name_en="Manta Style",
+                name_ru="Манта",
+                winrate=0.61,
+                match_count=3500,
+                time=25,
+            ),
         ],
         situational_items=[
-            BuildItem(item_id=3, name_en="Black King Bar",
-                      name_ru="БКБ", winrate=0.55, match_count=2000),
-            BuildItem(item_id=4, name_en="Abyssal Blade",
-                      name_ru="Абиссал", winrate=0.63, match_count=1500),
+            BuildItem(
+                item_id=3, name_en="Black King Bar", name_ru="БКБ", winrate=0.55, match_count=2000
+            ),
+            BuildItem(
+                item_id=4,
+                name_en="Abyssal Blade",
+                name_ru="Абиссал",
+                winrate=0.63,
+                match_count=1500,
+            ),
         ],
         skill_order=[
             SkillSlot(ability_id=100, slot=2),  # E
@@ -367,10 +414,9 @@ class TestFormatBuild:
     """Тесты функции format_build."""
 
     def test_header_with_hero_name(self):
-        """Заголовок содержит имя героя на русском и английском."""
+        """Заголовок содержит имя героя на английском."""
         build = _sample_build()
         result = format_build(build)
-        assert "Анти-Маг" in result
         assert "Anti-Mage" in result
 
     def test_guide_winrate_shown(self):
@@ -384,33 +430,33 @@ class TestFormatBuild:
         build = _sample_build()
         result = format_build(build)
         assert "Стартовые предметы" in result
-        assert "Танго" in result
-        assert "Секач" in result
+        assert "Tango" in result
+        assert "Quelling Blade" in result
 
     def test_core_items_section(self):
         """Секция основных предметов с нумерацией."""
         build = _sample_build()
         result = format_build(build)
         assert "Основные предметы" in result
-        assert "Батлфьюри" in result
-        assert "Манта" in result
+        assert "Battle Fury" in result
+        assert "Manta Style" in result
         assert "1." in result
         assert "2." in result
 
-    def test_core_items_with_time(self):
-        """Время покупки основных предметов."""
+    def test_core_items_with_popularity(self):
+        """Популярность основных предметов (в процентах)."""
         build = _sample_build()
         result = format_build(build)
-        assert "15 мин" in result  # 900 сек
-        assert "25 мин" in result  # 1500 сек
+        assert "58%" in result  # Battle Fury winrate/popularity
+        assert "61%" in result  # Manta Style winrate/popularity
 
     def test_situational_items_section(self):
         """Секция ситуативных предметов."""
         build = _sample_build()
         result = format_build(build)
         assert "Ситуативные предметы" in result
-        assert "БКБ" in result
-        assert "Абиссал" in result
+        assert "Black King Bar" in result
+        assert "Abyssal Blade" in result
 
     def test_skill_order_section(self):
         """Секция прокачки скиллов."""
@@ -445,17 +491,16 @@ class TestFormatBuild:
         """Пустой билд — только заголовок."""
         build = HeroBuild(hero_id=1, name_en="Anti-Mage", name_ru="Анти-Маг")
         result = format_build(build)
-        assert "Анти-Маг" in result
+        assert "Anti-Mage" in result
         # Нет секций предметов
         assert "Стартовые" not in result
         assert "Основные" not in result
 
     def test_zero_guide_winrate_not_shown(self):
         """Нулевой винрейт гайда не отображается."""
-        build = HeroBuild(hero_id=1, name_en="Anti-Mage",
-                          name_ru="Анти-Маг", guide_winrate=0.0)
+        build = HeroBuild(hero_id=1, name_en="Anti-Mage", name_ru="Анти-Маг", guide_winrate=0.0)
         result = format_build(build)
-        assert "Винрейт гайда" not in result
+        assert "Гайд:" not in result
 
 
 # ===========================================================================
@@ -742,12 +787,13 @@ class TestShowBuild:
         user = _sample_user()
         build = _sample_build()
 
-        with patch(
-            "bot.handlers.build.StratzClient"
-        ) as mock_stratz_cls, patch(
-            "bot.handlers.build.get_hero_build",
-            new_callable=AsyncMock,
-        ) as mock_get_build:
+        with (
+            patch("bot.handlers.build.StratzClient") as mock_stratz_cls,
+            patch(
+                "bot.handlers.build.get_hero_build",
+                new_callable=AsyncMock,
+            ) as mock_get_build,
+        ):
             stratz_inst = MagicMock()
             stratz_inst.__aenter__ = AsyncMock(return_value=stratz_inst)
             stratz_inst.__aexit__ = AsyncMock(return_value=False)
@@ -760,7 +806,7 @@ class TestShowBuild:
         msg.answer.assert_called_once()
         call_args = msg.answer.call_args
         text = call_args[0][0]
-        assert "Анти-Маг" in text
+        assert "Anti-Mage" in text
         assert call_args[1].get("parse_mode") == "HTML"
 
     def test_uses_user_mmr_for_bracket(self):
@@ -770,12 +816,13 @@ class TestShowBuild:
         user["current_mmr"] = 5500  # Divine
         build = _sample_build()
 
-        with patch(
-            "bot.handlers.build.StratzClient"
-        ) as mock_stratz_cls, patch(
-            "bot.handlers.build.get_hero_build",
-            new_callable=AsyncMock,
-        ) as mock_get_build:
+        with (
+            patch("bot.handlers.build.StratzClient") as mock_stratz_cls,
+            patch(
+                "bot.handlers.build.get_hero_build",
+                new_callable=AsyncMock,
+            ) as mock_get_build,
+        ):
             stratz_inst = MagicMock()
             stratz_inst.__aenter__ = AsyncMock(return_value=stratz_inst)
             stratz_inst.__aexit__ = AsyncMock(return_value=False)
@@ -795,9 +842,7 @@ class TestShowBuild:
         msg = _make_message()
         user = _sample_user()
 
-        with patch(
-            "bot.handlers.build.StratzClient"
-        ) as mock_stratz_cls:
+        with patch("bot.handlers.build.StratzClient") as mock_stratz_cls:
             stratz_inst = MagicMock()
             stratz_inst.__aenter__ = AsyncMock(side_effect=RuntimeError("API down"))
             mock_stratz_cls.return_value = stratz_inst
@@ -815,12 +860,13 @@ class TestShowBuild:
         user["current_mmr"] = None
         build = _sample_build()
 
-        with patch(
-            "bot.handlers.build.StratzClient"
-        ) as mock_stratz_cls, patch(
-            "bot.handlers.build.get_hero_build",
-            new_callable=AsyncMock,
-        ) as mock_get_build:
+        with (
+            patch("bot.handlers.build.StratzClient") as mock_stratz_cls,
+            patch(
+                "bot.handlers.build.get_hero_build",
+                new_callable=AsyncMock,
+            ) as mock_get_build,
+        ):
             stratz_inst = MagicMock()
             stratz_inst.__aenter__ = AsyncMock(return_value=stratz_inst)
             stratz_inst.__aexit__ = AsyncMock(return_value=False)

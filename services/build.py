@@ -9,6 +9,7 @@ from clients.llm import LLMClient, load_prompt
 from clients.stratz import (
     HeroBuildData,
     HeroGuideData,
+    HeroMatchup,
     ItemPurchase,
     StratzClient,
     TalentInfo,
@@ -16,7 +17,7 @@ from clients.stratz import (
 from core.cache import build_cache
 from core.enums import RankBracket, Role
 from core.hero_mapping import get_hero_by_id
-from core.items import get_item_name_en, get_item_name_ru
+from core.items import ITEM_BY_ID, get_item_name_en, get_item_name_ru
 from core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,18 +58,33 @@ class TalentChoice:
 
 
 @dataclass
+class MatchupEntry:
+    """Запись о matchup-е героя."""
+
+    hero_id: int
+    name_en: str
+    name_ru: str
+    advantage: float  # synergy value (positive = good, negative = bad)
+
+
+@dataclass
 class HeroBuild:
-    """Полный билд героя: предметы, скиллы, таланты."""
+    """Полный билд героя: предметы, скиллы, таланты, matchups."""
 
     hero_id: int
     name_en: str
     name_ru: str
     starting_items: list[BuildItem] = field(default_factory=list)
+    boots: list[BuildItem] = field(default_factory=list)
     core_items: list[BuildItem] = field(default_factory=list)
     situational_items: list[BuildItem] = field(default_factory=list)
     skill_order: list[SkillSlot] = field(default_factory=list)
     talents: list[TalentChoice] = field(default_factory=list)
     guide_winrate: float = 0.0  # Винрейт гайда
+    guide_match_count: int = 0  # Кол-во матчей гайда
+    best_with: list[MatchupEntry] = field(default_factory=list)
+    worst_against: list[MatchupEntry] = field(default_factory=list)
+    best_against: list[MatchupEntry] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -122,13 +138,39 @@ async def get_hero_build(
 
     # Получаем item build из Stratz
     build_data = await stratz.get_hero_build(hero_id, role, bracket)
-    # Guide API изменился — скиллы/таланты временно недоступны
-    guide_data = HeroGuideData(hero_id=hero_id)
+
+    # Получаем гайд (скиллы/таланты)
+    try:
+        guide_data = await stratz.get_hero_guide(hero_id, role, bracket)
+    except Exception:
+        logger.warning("Не удалось получить гайд для hero_id=%s, fallback", hero_id, exc_info=True)
+        guide_data = HeroGuideData(hero_id=hero_id)
+
+    # Получаем matchups
+    try:
+        matchup_data = await stratz.get_hero_matchups(hero_id, bracket)
+    except Exception:
+        logger.warning("Не удалось получить matchups для hero_id=%s", hero_id, exc_info=True)
+        matchup_data = None
 
     hero_data = get_hero_by_id(hero_id)
 
-    result = _assemble_build(hero_id, hero_data.name_en, hero_data.name_ru,
-                             build_data, guide_data)
+    result = _assemble_build(
+        hero_id,
+        hero_data.name_en,
+        hero_data.name_ru,
+        build_data,
+        guide_data,
+    )
+
+    # Добавляем matchups
+    if matchup_data:
+        result.best_with = _convert_matchups(matchup_data.with_heroes[:3])
+        # vs_heroes sorted by synergy asc → worst first (counters)
+        result.worst_against = _convert_matchups(matchup_data.vs_heroes[:3])
+        # best_against = heroes this hero counters (vs sorted desc)
+        best_against_raw = sorted(matchup_data.vs_heroes, key=lambda m: m.synergy, reverse=True)
+        result.best_against = _convert_matchups(best_against_raw[:3])
 
     build_cache.set(key, result)
     return result
@@ -138,8 +180,124 @@ async def get_hero_build(
 # Вспомогательные функции
 # ---------------------------------------------------------------------------
 
-# Количество core-предметов (основных) — остальные считаются ситуативными
+# Лимиты предметов по секциям
+_STARTING_ITEMS_COUNT = 6
 _CORE_ITEMS_COUNT = 6
+_SITUATIONAL_ITEMS_COUNT = 8
+
+# Расходники — всегда исключаем из core/situational
+_CONSUMABLE_IDS: set[int] = {
+    38,  # Clarity
+    39,  # Faerie Fire
+    40,  # Smoke of Deceit
+    41,  # Tome of Knowledge
+    42,  # Observer Ward
+    43,  # Sentry Ward
+    44,  # Tango
+    45,  # Animal Courier
+    46,  # Flying Courier
+    216,  # Dust of Appearance
+    218,  # Iron Branch
+    237,  # Healing Salve
+    241,  # Mango
+    265,  # Infused Raindrops
+    593,  # Blood Grenade
+}
+
+# Сырые компоненты — промежуточные предметы, которые всегда встраиваются в конечные.
+# Исключаем из core/situational, чтобы показать только «готовые» предметы.
+_COMPONENT_IDS: set[int] = {
+    2,  # Blades of Attack
+    4,  # Chainmail
+    5,  # Broadsword
+    6,  # Quarterstaff
+    7,  # Platemail
+    8,  # Helm of Iron Will
+    10,  # Ring of Protection
+    11,  # Ring of Regen
+    12,  # Gloves of Haste
+    13,  # Mithril Hammer
+    14,  # Demon Edge
+    15,  # Cloak
+    16,  # Gauntlets of Strength
+    17,  # Slippers of Agility
+    18,  # Mantle of Intelligence
+    19,  # Circlet
+    20,  # Belt of Strength
+    21,  # Band of Elvenskin
+    22,  # Robe of the Magi
+    23,  # Ogre Axe
+    24,  # Blade of Alacrity
+    25,  # Staff of Wizardry
+    26,  # Point Booster
+    27,  # Ring of Health
+    29,  # Claymore
+    30,  # Javelin
+    31,  # Morbid Mask
+    32,  # Sacred Relic
+    33,  # Hyperstone
+    48,  # Stout Shield
+    51,  # Oblivion Staff
+    55,  # Perseverance
+    60,  # Void Stone
+    61,  # Mystic Staff
+    65,  # Ultimate Orb
+    67,  # Reaver
+    69,  # Eagle Song
+    77,  # Wind Lace
+    137,  # Shadow Amulet
+    240,  # Crown
+    273,  # Voodoo Mask
+    573,  # Fluffy Hat
+    600,  # Cornucopia
+}
+
+# Дешёвые утилиты — покупаются на каждом герое, не являются core-предметами
+_CHEAP_UTILITY_IDS: set[int] = {
+    36,  # Magic Wand
+    73,  # Blight Stone
+    75,  # Urn of Shadows
+    180,  # Ring of Basilius
+    182,  # Sage's Mask (composes into items)
+    34,  # Bottle
+}
+
+# Удалённые из игры предметы (исторические данные в Stratz)
+_REMOVED_ITEM_IDS: set[int] = {
+    116,  # Necronomicon 1
+    117,  # Necronomicon 2
+    118,  # Necronomicon 3
+    239,  # Iron Talon
+    187,  # Helm of the Dominator (old version)
+    193,  # Ring of Aquila
+    104,  # Stygian Desolator (old)
+}
+
+# Объединённый набор предметов, исключаемых из core/situational
+_EXCLUDED_FROM_BUILD: set[int] = (
+    _CONSUMABLE_IDS | _COMPONENT_IDS | _CHEAP_UTILITY_IDS | _REMOVED_ITEM_IDS
+)
+
+
+def _is_build_item(item: BuildItem) -> bool:
+    """Проверить, что предмет — «готовый» (не расходник и не компонент)."""
+    return item.item_id not in _EXCLUDED_FROM_BUILD
+
+
+def _is_build_item_id(item_id: int) -> bool:
+    """Проверить по ID, что предмет — «готовый» (не расходник и не компонент)."""
+    return item_id not in _EXCLUDED_FROM_BUILD
+
+
+def _dedup_items(items: list[BuildItem]) -> list[BuildItem]:
+    """Убрать дубликаты по item_id, сохраняя порядок (первое вхождение)."""
+    seen: set[int] = set()
+    result: list[BuildItem] = []
+    for item in items:
+        if item.item_id not in seen:
+            seen.add(item.item_id)
+            result.append(item)
+    return result
 
 
 def _assemble_build(
@@ -150,37 +308,24 @@ def _assemble_build(
     guide_data: HeroGuideData,
 ) -> HeroBuild:
     """Собрать HeroBuild из сырых данных Stratz."""
-    starting = _convert_items(build_data.starting_items)
+    # Стартовые: из itemStartingPurchase, без компонентов
+    starting_raw = _convert_items(build_data.starting_items)
+    starting_raw = [it for it in starting_raw if it.item_id not in _COMPONENT_IDS]
+    starting = _dedup_items(starting_raw)[:_STARTING_ITEMS_COUNT]
 
-    # core_items = early_game + mid_game (основные предметы по порядку покупки)
-    all_main = _convert_items(build_data.early_game) + _convert_items(build_data.mid_game)
+    # Ботинки: из itemBootPurchase, топ-1 по matchCount
+    boots_raw = _convert_items(build_data.boot_items)
+    boots = _dedup_items(boots_raw)[:3]
 
-    # Убираем дубликаты (по item_id), сохраняя порядок
-    seen: set[int] = set()
-    unique_main: list[BuildItem] = []
-    for item in all_main:
-        if item.item_id not in seen:
-            seen.add(item.item_id)
-            unique_main.append(item)
+    # Core/situational: из itemFullPurchase (уже агрегировано и отсортировано по matchCount)
+    core, situational = _items_from_stats(build_data)
 
-    core = unique_main[:_CORE_ITEMS_COUNT]
-    situational_from_main = unique_main[_CORE_ITEMS_COUNT:]
-
-    # late_game → ситуативные предметы
-    late = _convert_items(build_data.late_game)
-    # Убираем дубликаты с core
-    for item in late:
-        if item.item_id not in seen:
-            seen.add(item.item_id)
-            situational_from_main.append(item)
-
-    # Скиллы
+    # Скиллы: abilityMaxLevel уже отсортированы по level
     skill_order = [
-        SkillSlot(ability_id=ab.ability_id, slot=ab.slot)
-        for ab in guide_data.ability_order
+        SkillSlot(ability_id=ab.ability_id, slot=ab.slot) for ab in guide_data.ability_order
     ]
 
-    # Таланты
+    # Таланты: группируем по тирам (4 тира, лучший выбор на каждом)
     talents = _convert_talents(guide_data.talents)
 
     return HeroBuild(
@@ -188,18 +333,37 @@ def _assemble_build(
         name_en=name_en,
         name_ru=name_ru,
         starting_items=starting,
+        boots=boots,
         core_items=core,
-        situational_items=situational_from_main,
+        situational_items=situational,
         skill_order=skill_order,
         talents=talents,
         guide_winrate=guide_data.winrate,
+        guide_match_count=guide_data.match_count,
     )
 
 
+def _items_from_stats(build_data: HeroBuildData) -> tuple[list[BuildItem], list[BuildItem]]:
+    """Собрать core/situational из itemFullPurchase (агрегировано, сортировка по matchCount)."""
+    # early_game содержит все агрегированные предметы, уже отсортированные по matchCount desc
+    all_items = _convert_items(build_data.early_game)
+    build_items = [it for it in all_items if _is_build_item(it)]
+    build_items = _dedup_items(build_items)
+
+    core = build_items[:_CORE_ITEMS_COUNT]
+    situational = build_items[_CORE_ITEMS_COUNT : _CORE_ITEMS_COUNT + _SITUATIONAL_ITEMS_COUNT]
+    return core, situational
+
+
 def _convert_items(items: list[ItemPurchase]) -> list[BuildItem]:
-    """Конвертировать ItemPurchase из Stratz в BuildItem с именами."""
+    """Конвертировать ItemPurchase из Stratz в BuildItem с именами.
+
+    Предметы, отсутствующие в маппинге (Item #XXX), отфильтровываются.
+    """
     result: list[BuildItem] = []
     for ip in items:
+        if ip.item_id not in ITEM_BY_ID:
+            continue
         result.append(
             BuildItem(
                 item_id=ip.item_id,
@@ -213,20 +377,54 @@ def _convert_items(items: list[ItemPurchase]) -> list[BuildItem]:
     return result
 
 
+def _convert_matchups(matchups: list[HeroMatchup]) -> list[MatchupEntry]:
+    """Конвертировать HeroMatchup из Stratz в MatchupEntry с именами."""
+    result: list[MatchupEntry] = []
+    for m in matchups:
+        try:
+            hero_data = get_hero_by_id(m.hero_id2)
+            result.append(
+                MatchupEntry(
+                    hero_id=m.hero_id2,
+                    name_en=hero_data.name_en,
+                    name_ru=hero_data.name_ru,
+                    advantage=m.synergy,
+                )
+            )
+        except Exception:
+            continue
+    return result
+
+
 def _convert_talents(talents: list[TalentInfo]) -> list[TalentChoice]:
-    """Конвертировать TalentInfo из Stratz в TalentChoice."""
-    result: list[TalentChoice] = []
+    """Конвертировать TalentInfo из Stratz в TalentChoice.
+
+    API возвращает все 8 талантов (2 на каждый тир).
+    Группируем по парам (0-1, 2-3, 4-5, 6-7) и берём лучший по matchCount.
+    """
+    if not talents:
+        return []
+
+    # Группируем по тирам (пары: 0-1=tier1, 2-3=tier2, 4-5=tier3, 6-7=tier4)
+    tiers: dict[int, list[TalentInfo]] = {}
     for t in talents:
+        tier = t.slot // 2
+        if tier not in tiers:
+            tiers[tier] = []
+        tiers[tier].append(t)
+
+    result: list[TalentChoice] = []
+    for tier_idx in sorted(tiers.keys()):
+        # Берём талант с наибольшим matchCount в тире
+        best = max(tiers[tier_idx], key=lambda t: t.match_count)
         result.append(
             TalentChoice(
-                ability_id=t.ability_id,
-                slot=t.slot,
-                winrate=t.winrate,
-                match_count=t.match_count,
+                ability_id=best.ability_id,
+                slot=tier_idx,  # 0=lvl10, 1=lvl15, 2=lvl20, 3=lvl25
+                winrate=best.winrate,
+                match_count=best.match_count,
             )
         )
-    # Сортируем по слоту (порядок выбора талантов)
-    result.sort(key=lambda tc: tc.slot)
     return result
 
 
@@ -301,8 +499,7 @@ async def get_situational_build(
         "bracket": bracket_val,
         "standard_build": {
             "core_items": [
-                {"name": item.name_en, "name_ru": item.name_ru}
-                for item in base_build.core_items
+                {"name": item.name_en, "name_ru": item.name_ru} for item in base_build.core_items
             ],
             "situational_items": [
                 {"name": item.name_en, "name_ru": item.name_ru}

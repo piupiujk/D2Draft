@@ -12,12 +12,36 @@ if TYPE_CHECKING:
     from services.profile import UserProfile
 
 
-def format_meta_heroes(heroes: list[MetaHero], role_label: str) -> str:
+def _trend_arrow(trend: float) -> str:
+    """Стрелка тренда винрейта."""
+    if trend > 0.005:
+        return "⬆"
+    if trend < -0.005:
+        return "⬇"
+    return "➡"
+
+
+def _wr_tier_emoji(winrate: float) -> str:
+    """Эмодзи уровня винрейта."""
+    wr_pct = winrate * 100
+    if wr_pct > 53:
+        return "🟢"
+    if wr_pct < 48:
+        return "🔴"
+    return "🟡"
+
+
+def format_meta_heroes(
+    heroes: list[MetaHero],
+    role_label: str,
+    bracket_label: str = "",
+) -> str:
     """Форматировать список мета-героев для Telegram-сообщения.
 
     Args:
         heroes: список MetaHero для отображения.
         role_label: название роли на русском (для заголовка).
+        bracket_label: название брекета (для заголовка).
 
     Returns:
         Строка с HTML-разметкой, длина <= 4096 символов.
@@ -25,26 +49,29 @@ def format_meta_heroes(heroes: list[MetaHero], role_label: str) -> str:
     if not heroes:
         return f"Нет данных по мета-героям для роли <b>{role_label}</b>."
 
-    lines: list[str] = [
-        f"<b>Мета-герои — {role_label}</b>\n",
-    ]
+    header = f"⚔️ <b>Мета-герои — {role_label}</b>"
+    if bracket_label:
+        header += f" ({bracket_label})"
+
+    lines: list[str] = [header, ""]
 
     for i, h in enumerate(heroes, start=1):
         wr_pct = f"{h.winrate * 100:.1f}%"
         pr_pct = f"{h.pick_rate * 100:.1f}%"
+        trend = _trend_arrow(h.trend)
+        tier = _wr_tier_emoji(h.winrate)
 
-        line = f"{i}. <b>{h.name_ru}</b> ({h.name_en})"
-        line += f"\n   Винрейт: {wr_pct} | Пикрейт: {pr_pct} | Матчей: {h.match_count}"
+        line = f" {i}. {trend} <b>{h.name_en}</b>"
+        line += f"\n    {tier} WR: {wr_pct} | PR: {pr_pct} | {h.match_count} матчей"
 
         if h.personal_winrate is not None and h.personal_games is not None:
             p_wr = f"{h.personal_winrate * 100:.1f}%"
-            line += f"\n   Личный: {p_wr} ({h.personal_games} игр)"
+            line += f"\n    Личный: {p_wr} ({h.personal_games} игр)"
 
         lines.append(line)
 
     result = "\n".join(lines)
 
-    # Лимит Telegram — 4096 символов
     if len(result) > 4096:
         result = result[:4090] + "\n..."
 
@@ -69,11 +96,14 @@ def format_build(build: HeroBuild) -> str:
         Строка с HTML-разметкой, длина <= 4096 символов.
     """
     lines: list[str] = [
-        f"🛡 <b>Билд: {build.name_ru}</b> ({build.name_en})",
+        f"🛡 <b>Билд: {build.name_en}</b>",
     ]
 
     if build.guide_winrate > 0:
-        lines.append(f"Винрейт гайда: {build.guide_winrate * 100:.1f}%")
+        header_parts = [f"{build.guide_winrate * 100:.1f}% WR"]
+        if build.guide_match_count > 0:
+            header_parts.append(f"{build.guide_match_count} матчей")
+        lines.append(f"Гайд: {' | '.join(header_parts)}")
 
     lines.append("")
 
@@ -84,36 +114,52 @@ def format_build(build: HeroBuild) -> str:
         lines.append(items_text)
         lines.append("")
 
+    # Ботинки
+    if build.boots:
+        lines.append("👟 <b>Ботинки</b>")
+        boot_parts = []
+        for it in build.boots:
+            pct = f"{it.winrate * 100:.0f}% WR" if it.winrate > 0 else ""
+            boot_parts.append(f"{it.name_en} ({pct})" if pct else it.name_en)
+        lines.append(", ".join(boot_parts))
+        lines.append("")
+
     # Основные предметы
     if build.core_items:
         lines.append("🔵 <b>Основные предметы</b>")
         for i, it in enumerate(build.core_items, start=1):
-            wr = f"{it.winrate * 100:.1f}%" if it.winrate > 0 else ""
-            time_str = ""
-            if it.time is not None and it.time > 0:
-                minutes = it.time // 60
-                time_str = f" ~{minutes} мин"
-            parts = [f"{i}. {it.name_en}"]
-            if wr:
-                parts.append(wr)
-            if time_str:
-                parts.append(time_str)
+            pct = f"{it.winrate * 100:.0f}%"
+            mc = f"{it.match_count} матч." if it.match_count > 0 else ""
+            parts = [f" {i}. {it.name_en}"]
+            if pct:
+                parts.append(pct)
+            if mc:
+                parts.append(mc)
             lines.append(" | ".join(parts))
         lines.append("")
 
     # Ситуативные предметы
     if build.situational_items:
         lines.append("🟡 <b>Ситуативные предметы</b>")
-        sit_names = ", ".join(it.name_en for it in build.situational_items)
-        lines.append(sit_names)
+        sit_parts = []
+        for it in build.situational_items:
+            if it.winrate > 0:
+                sit_parts.append(f"{it.name_en} ({it.winrate * 100:.0f}%)")
+            else:
+                sit_parts.append(it.name_en)
+        lines.append(", ".join(sit_parts))
         lines.append("")
 
     # Порядок прокачки скиллов
     if build.skill_order:
         lines.append("📘 <b>Прокачка скиллов</b>")
-        skill_str = " → ".join(
-            _SKILL_SLOT_LABEL.get(s.slot, "?") for s in build.skill_order
-        )
+        # Маппим abilityId → букву (Q/W/E/R) по порядку первого появления
+        ability_id_to_label: dict[int, str] = {}
+        labels = ["Q", "W", "E", "R", "D", "F"]
+        for s in build.skill_order:
+            if s.slot not in ability_id_to_label and len(ability_id_to_label) < len(labels):
+                ability_id_to_label[s.slot] = labels[len(ability_id_to_label)]
+        skill_str = " → ".join(ability_id_to_label.get(s.slot, "?") for s in build.skill_order)
         lines.append(skill_str)
         lines.append("")
 
@@ -125,12 +171,38 @@ def format_build(build: HeroBuild) -> str:
             label = f"Ур. {10 + tc.slot * 5}" if tc.slot < 4 else f"Слот {tc.slot}"
             line = f"  {label}"
             if wr:
-                line += f" (ВР: {wr})"
+                line += f" ({wr} WR)"
             lines.append(line)
+        lines.append("")
+
+    # Контрпики (плохо против)
+    if build.worst_against:
+        lines.append("⚔️ <b>Контрпики (плохо против)</b>")
+        counter_parts = []
+        for m in build.worst_against:
+            counter_parts.append(f"{m.name_en} ({m.advantage:+.1f}%)")
+        lines.append(", ".join(counter_parts))
+        lines.append("")
+
+    # Лучшие союзники
+    if build.best_with:
+        lines.append("🤝 <b>Лучшие союзники</b>")
+        ally_parts = []
+        for m in build.best_with:
+            ally_parts.append(f"{m.name_en} ({m.advantage:+.1f}%)")
+        lines.append(", ".join(ally_parts))
+        lines.append("")
+
+    # Хорош против
+    if build.best_against:
+        lines.append("💪 <b>Хорош против</b>")
+        good_parts = []
+        for m in build.best_against:
+            good_parts.append(f"{m.name_en} ({m.advantage:+.1f}%)")
+        lines.append(", ".join(good_parts))
 
     result = "\n".join(lines)
 
-    # Лимит Telegram — 4096 символов
     if len(result) > 4096:
         result = result[:4090] + "\n..."
 
@@ -158,9 +230,7 @@ def format_match_analysis(analysis: MatchAnalysis) -> str:
         Строка с HTML-разметкой, длина <= 4096 символов.
     """
     result_val = (
-        analysis.result.value
-        if hasattr(analysis.result, "value")
-        else str(analysis.result)
+        analysis.result.value if hasattr(analysis.result, "value") else str(analysis.result)
     )
     emoji, result_text = _RESULT_DISPLAY.get(result_val, ("❓", str(result_val)))
 
@@ -171,9 +241,7 @@ def format_match_analysis(analysis: MatchAnalysis) -> str:
 
     # Роль
     role_label = (
-        analysis.role.label_ru
-        if hasattr(analysis.role, "label_ru")
-        else str(analysis.role)
+        analysis.role.label_ru if hasattr(analysis.role, "label_ru") else str(analysis.role)
     )
 
     lines: list[str] = [

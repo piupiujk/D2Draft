@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
-from curl_cffi import requests as cffi_requests
 import httpx
+from curl_cffi import requests as cffi_requests
 
 from core.enums import RankBracket, Role
 from core.exceptions import APIRateLimited
@@ -64,6 +65,7 @@ class MetaHeroStats:
     hero_id: int
     match_count: int
     win_count: int
+    trend: float = 0.0  # Дельта винрейта (this_week - last_week)
 
     @property
     def winrate(self) -> float:
@@ -93,6 +95,7 @@ class HeroBuildData:
 
     hero_id: int
     starting_items: list[ItemPurchase] = field(default_factory=list)
+    boot_items: list[ItemPurchase] = field(default_factory=list)
     early_game: list[ItemPurchase] = field(default_factory=list)
     mid_game: list[ItemPurchase] = field(default_factory=list)
     late_game: list[ItemPurchase] = field(default_factory=list)
@@ -161,6 +164,15 @@ class HeroMatchupData:
     vs_heroes: list[HeroMatchup] = field(default_factory=list)
 
 
+@dataclass
+class GuideItemsData:
+    """Агрегированные предметы из гайд-матчей (реальные билды топ-игроков)."""
+
+    hero_id: int
+    match_count: int = 0
+    item_counts: dict[int, int] = field(default_factory=dict)  # item_id -> кол-во матчей
+
+
 # ---------------------------------------------------------------------------
 # GraphQL запросы
 # ---------------------------------------------------------------------------
@@ -169,7 +181,7 @@ QUERY_META_HEROES = """
 query HeroMeta($bracketIds: [RankBracket], $positionIds: [MatchPlayerPositionType]) {
   heroStats {
     winWeek(
-      take: 1
+      take: 2
       bracketIds: $bracketIds
       positionIds: $positionIds
       gameModeIds: [ALL_PICK_RANKED]
@@ -199,10 +211,20 @@ query HeroBuild(
       winCount
       wasGiven
     }
+    itemBootPurchase(
+      heroId: $heroId
+      bracketBasicIds: $bracketBasicIds
+      positionIds: $positionIds
+    ) {
+      itemId
+      matchCount
+      winCount
+    }
     itemFullPurchase(
       heroId: $heroId
       bracketBasicIds: $bracketBasicIds
       positionIds: $positionIds
+      minTime: 10
     ) {
       itemId
       matchCount
@@ -216,26 +238,52 @@ query HeroBuild(
 QUERY_HERO_GUIDE = """
 query HeroGuide(
   $heroId: Short!
+  $positionIds: [MatchPlayerPositionType]
+  $bracketBasicIds: [RankBracketBasicEnum]
+) {
+  heroStats {
+    talent(
+      heroId: $heroId
+      positionIds: $positionIds
+      bracketBasicIds: $bracketBasicIds
+    ) {
+      abilityId
+      matchCount
+      winCount
+      winsAverage
+    }
+    abilityMaxLevel(
+      heroId: $heroId
+      positionIds: $positionIds
+      bracketBasicIds: $bracketBasicIds
+    ) {
+      abilityId
+      level
+      matchCount
+      winCount
+    }
+  }
+}
+"""
+
+QUERY_HERO_GUIDE_ITEMS = """
+query HeroGuideItems(
+  $heroId: Short!
   $positionId: MatchPlayerPositionType
+  $take: Int
 ) {
   heroStats {
     guide(
       heroId: $heroId
       positionId: $positionId
-      take: 1
+      take: $take
     ) {
       heroId
       matchCount
-      winCount
-      abilityMaxOrder {
-        abilityId
-        slot
-      }
-      talent {
-        abilityId
-        slot
-        winCount
-        matchCount
+      guides {
+        matchId
+        itemIds
+        steamAccountId
       }
     }
   }
@@ -249,20 +297,18 @@ query HeroMatchups($heroId: Short!, $bracketBasicIds: [RankBracketBasicEnum]) {
       heroId: $heroId
       bracketBasicIds: $bracketBasicIds
     ) {
-      advantage {
-        heroId
-        with {
-          heroId2
-          matchCount
-          winCount
-          synergy
-        }
-        vs {
-          heroId2
-          matchCount
-          winCount
-          synergy
-        }
+      heroId
+      with {
+        heroId2
+        matchCount
+        winCount
+        synergy
+      }
+      vs {
+        heroId2
+        matchCount
+        winCount
+        synergy
       }
     }
   }
@@ -273,6 +319,7 @@ query HeroMatchups($heroId: Short!, $bracketBasicIds: [RankBracketBasicEnum]) {
 # ---------------------------------------------------------------------------
 # Rate limiter (token bucket)
 # ---------------------------------------------------------------------------
+
 
 class _RateLimiter:
     """Простой token-bucket rate limiter для Stratz API."""
@@ -354,21 +401,38 @@ class StratzClient:
         }
         data = await self._query(QUERY_META_HEROES, variables)
 
-        raw_list = (
-            data.get("data", {})
-            .get("heroStats", {})
-            .get("winWeek", [])
-        )
-        result: list[MetaHeroStats] = []
+        raw_list = data.get("data", {}).get("heroStats", {}).get("winWeek", [])
+
+        # winWeek returns entries grouped by heroId; with take:2 we get
+        # two entries per hero (this week index 0, last week index 1).
+        by_hero: dict[int, list[dict]] = defaultdict(list)
         for item in raw_list:
             hero_id = item.get("heroId")
-            if hero_id is None:
-                continue
+            if hero_id is not None:
+                by_hero[hero_id].append(item)
+
+        result: list[MetaHeroStats] = []
+        for hero_id, weeks in by_hero.items():
+            # First entry = most recent week
+            this_week = weeks[0]
+            mc = this_week.get("matchCount", 0)
+            wc = this_week.get("winCount", 0)
+            this_wr = wc / mc if mc > 0 else 0.0
+
+            trend = 0.0
+            if len(weeks) >= 2:
+                last_week = weeks[1]
+                lmc = last_week.get("matchCount", 0)
+                lwc = last_week.get("winCount", 0)
+                last_wr = lwc / lmc if lmc > 0 else 0.0
+                trend = this_wr - last_wr
+
             result.append(
                 MetaHeroStats(
                     hero_id=hero_id,
-                    match_count=item.get("matchCount", 0),
-                    win_count=item.get("winCount", 0),
+                    match_count=mc,
+                    win_count=wc,
+                    trend=trend,
                 )
             )
         return result
@@ -395,19 +459,27 @@ class StratzClient:
 
         hero_stats = data.get("data", {}).get("heroStats", {})
         starting_raw = hero_stats.get("itemStartingPurchase", []) or []
+        boot_raw = hero_stats.get("itemBootPurchase", []) or []
         full_raw = hero_stats.get("itemFullPurchase", []) or []
 
-        # Split full items by time: early (<15min), mid (15-25min), late (>25min)
-        early = [i for i in full_raw if (i.get("time") or 0) < 15]
-        mid = [i for i in full_raw if 15 <= (i.get("time") or 0) < 25]
-        late = [i for i in full_raw if (i.get("time") or 0) >= 25]
+        # Агрегируем full items по itemId (суммируем matchCount/winCount)
+        agg: dict[int, dict[str, int]] = {}
+        for item in full_raw:
+            iid = item.get("itemId", 0)
+            if iid not in agg:
+                agg[iid] = {"itemId": iid, "matchCount": 0, "winCount": 0, "time": 0}
+            agg[iid]["matchCount"] += item.get("matchCount", 0)
+            agg[iid]["winCount"] += item.get("winCount", 0)
+
+        aggregated = sorted(agg.values(), key=lambda x: x["matchCount"], reverse=True)
 
         return HeroBuildData(
             hero_id=hero_id,
             starting_items=self._parse_items(starting_raw),
-            early_game=self._parse_items(early),
-            mid_game=self._parse_items(mid),
-            late_game=self._parse_items(late),
+            boot_items=self._parse_items(boot_raw),
+            early_game=self._parse_items(aggregated),
+            mid_game=[],
+            late_game=[],
         )
 
     async def get_hero_guide(
@@ -418,50 +490,115 @@ class StratzClient:
     ) -> HeroGuideData:
         """Получить гайд героя: порядок прокачки скиллов и таланты.
 
+        Использует heroStats.talent() и heroStats.abilityMaxLevel().
         Возвращает HeroGuideData с ability_order и talents.
         """
         variables: dict[str, Any] = {"heroId": hero_id}
         if role is not None:
-            variables["positionId"] = ROLE_TO_STRATZ_POSITION[Role(role)]
+            variables["positionIds"] = [ROLE_TO_STRATZ_POSITION[Role(role)]]
+        if bracket is not None:
+            stratz_bracket = RANK_TO_STRATZ_BRACKET_BASIC[RankBracket(bracket)]
+            variables["bracketBasicIds"] = [stratz_bracket]
 
         data = await self._query(QUERY_HERO_GUIDE, variables)
 
-        guide_list = (
-            data.get("data", {})
-            .get("heroStats", {})
-            .get("guide", [])
-        )
-        if not guide_list:
+        hero_stats = data.get("data", {}).get("heroStats", {})
+        talent_list = hero_stats.get("talent") or []
+        ability_list = hero_stats.get("abilityMaxLevel") or []
+
+        if not talent_list and not ability_list:
             return HeroGuideData(hero_id=hero_id)
 
-        guide = guide_list[0]
-
+        # abilityMaxLevel: каждый элемент = {abilityId, level, matchCount, winCount}
+        # level = уровень героя, на котором скиллят эту способность.
+        # Строим skill build: на каждом уровне берём ability с макс matchCount.
+        # Ограничиваемся уровнями 1-18 (основная прокачка).
         abilities: list[AbilityInfo] = []
-        for ab in guide.get("abilityMaxOrder") or []:
+        by_level: dict[int, list[dict]] = defaultdict(list)
+        for ab in ability_list:
+            lvl = ab.get("level", 0)
+            if 1 <= lvl <= 18:
+                by_level[lvl].append(ab)
+
+        # Для каждого уровня героя: какую способность скиллят чаще всего
+        for lvl in sorted(by_level.keys()):
+            best = max(by_level[lvl], key=lambda x: x.get("matchCount", 0))
+            # slot: определяем по позиции ability_id среди уникальных abilities
             abilities.append(
                 AbilityInfo(
-                    ability_id=ab.get("abilityId", 0),
-                    slot=ab.get("slot", 0),
+                    ability_id=best.get("abilityId", 0),
+                    slot=best.get("abilityId", 0),  # temporary: use abilityId as slot
                 )
             )
 
+        # talent: каждый элемент = {abilityId, matchCount, winCount, winsAverage}
+        total_match = 0
+        total_win = 0
         talents: list[TalentInfo] = []
-        for t in guide.get("talent") or []:
+        for i, t in enumerate(talent_list):
+            mc = t.get("matchCount", 0)
+            wc = t.get("winCount", 0)
+            total_match += mc
+            total_win += wc
             talents.append(
                 TalentInfo(
                     ability_id=t.get("abilityId", 0),
-                    slot=t.get("slot", 0),
-                    win_count=t.get("winCount", 0),
-                    match_count=t.get("matchCount", 0),
+                    slot=i,
+                    win_count=wc,
+                    match_count=mc,
                 )
             )
 
         return HeroGuideData(
             hero_id=hero_id,
-            match_count=guide.get("matchCount", 0),
-            win_count=guide.get("winCount", 0),
+            match_count=total_match,
+            win_count=total_win,
             ability_order=abilities,
             talents=talents,
+        )
+
+    async def get_hero_guide_items(
+        self,
+        hero_id: int,
+        role: Role | int | None = None,
+        *,
+        take: int = 10,
+    ) -> GuideItemsData:
+        """Получить предметы из гайд-матчей (реальные билды топ-игроков).
+
+        Берёт `take` матчей из guide endpoint и агрегирует itemIds
+        по частоте — предметы, встречающиеся чаще всего, считаются core.
+        """
+        variables: dict[str, Any] = {"heroId": hero_id, "take": take}
+        if role is not None:
+            variables["positionId"] = ROLE_TO_STRATZ_POSITION[Role(role)]
+
+        data = await self._query(QUERY_HERO_GUIDE_ITEMS, variables)
+
+        guide_list = data.get("data", {}).get("heroStats", {}).get("guide", [])
+        if not guide_list:
+            return GuideItemsData(hero_id=hero_id)
+
+        entry = guide_list[0]
+        guides = entry.get("guides") or []
+        total_matches = len(guides)
+
+        if total_matches == 0:
+            return GuideItemsData(hero_id=hero_id, match_count=entry.get("matchCount", 0))
+
+        item_counts: dict[int, int] = defaultdict(int)
+        for g in guides:
+            item_ids = g.get("itemIds") or []
+            seen_in_match: set[int] = set()
+            for item_id in item_ids:
+                if item_id and item_id not in seen_in_match:
+                    seen_in_match.add(item_id)
+                    item_counts[item_id] += 1
+
+        return GuideItemsData(
+            hero_id=hero_id,
+            match_count=total_matches,
+            item_counts=dict(item_counts),
         )
 
     async def get_hero_matchups(
@@ -481,20 +618,15 @@ class StratzClient:
 
         data = await self._query(QUERY_HERO_MATCHUPS, variables)
 
-        matchup_data = (
-            data.get("data", {})
-            .get("heroStats", {})
-            .get("matchUp", {})
-        )
-        advantage_list = matchup_data.get("advantage", [])
+        matchup_list = data.get("data", {}).get("heroStats", {}).get("matchUp", []) or []
 
         with_heroes: list[HeroMatchup] = []
         vs_heroes: list[HeroMatchup] = []
 
-        for adv in advantage_list:
-            for w in adv.get("with", []) or []:
+        for entry in matchup_list:
+            for w in entry.get("with", []) or []:
                 with_heroes.append(self._parse_matchup(w))
-            for v in adv.get("vs", []) or []:
+            for v in entry.get("vs", []) or []:
                 vs_heroes.append(self._parse_matchup(v))
 
         # Сортируем: синергии по убыванию synergy, контрпики по возрастанию
@@ -585,11 +717,14 @@ class StratzClient:
             await self._limiter.acquire()
             try:
                 raw = await asyncio.to_thread(
-                    self._sync_query, self._base_url, headers, payload,
+                    self._sync_query,
+                    self._base_url,
+                    headers,
+                    payload,
                 )
             except Exception as exc:
                 last_exc = exc
-                await asyncio.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                await asyncio.sleep(_RETRY_BACKOFF * (2**attempt))
                 continue
 
             status = raw["status_code"]
@@ -603,25 +738,33 @@ class StratzClient:
 
             if status in _RETRY_STATUS_CODES:
                 last_exc = Exception(f"HTTP {status}")
-                await asyncio.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                await asyncio.sleep(_RETRY_BACKOFF * (2**attempt))
                 continue
 
             if status >= 400:
+                # GraphQL APIs return 400 with JSON body on query errors
+                try:
+                    body = json_mod.loads(raw["body"])
+                    if "errors" in body and body["errors"]:
+                        errors = body["errors"]
+                        msg = "; ".join(
+                            e.get("message", "Неизвестная ошибка GraphQL") for e in errors
+                        )
+                        raise StratzGraphQLError(msg, errors=errors)
+                except (ValueError, KeyError):
+                    pass
                 raise httpx.HTTPStatusError(
-                    f"HTTP {status}",
+                    f"HTTP {status}: {raw['body'][:200]}",
                     request=httpx.Request("POST", self._base_url),
                     response=httpx.Response(status),
                 )
 
             body = json_mod.loads(raw["body"])
 
-            # Обработка ошибок GraphQL
+            # Обработка ошибок GraphQL (для 200 с ошибками)
             if "errors" in body and body["errors"]:
                 errors = body["errors"]
-                msg = "; ".join(
-                    e.get("message", "Неизвестная ошибка GraphQL")
-                    for e in errors
-                )
+                msg = "; ".join(e.get("message", "Неизвестная ошибка GraphQL") for e in errors)
                 raise StratzGraphQLError(msg, errors=errors)
 
             return body

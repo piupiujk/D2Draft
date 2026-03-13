@@ -31,8 +31,7 @@ META_ROLE_CB_PREFIX = "meta_role:"
 # ---------------------------------------------------------------------------
 
 _NOT_REGISTERED_TEXT = (
-    "Для использования этой функции нужно зарегистрироваться.\n"
-    "Отправь /start для начала."
+    "Для использования этой функции нужно зарегистрироваться.\nОтправь /start для начала."
 )
 
 _CHOOSE_ROLE_TEXT = "Выбери роль, чтобы увидеть мета-героев:"
@@ -214,7 +213,7 @@ async def _show_meta_heroes(
         return
 
     # Форматируем и отправляем текст
-    text = format_meta_heroes(heroes, role.label_ru)
+    text = format_meta_heroes(heroes, role.label_ru, bracket_label=bracket.value)
 
     # Генерируем inline-кнопки героев для перехода к билду
     hero_buttons = [HeroButton(hero_id=h.hero_id, name=h.name_ru) for h in heroes]

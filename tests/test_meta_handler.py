@@ -350,7 +350,6 @@ class TestFormatMetaHeroes:
         result = format_meta_heroes(heroes, "Керри")
 
         assert "Мета-герои — Керри" in result
-        assert "Анти-Маг" in result
         assert "Anti-Mage" in result
         assert "54.3%" in result  # винрейт
         assert "8.2%" in result   # пикрейт
@@ -362,7 +361,7 @@ class TestFormatMetaHeroes:
         heroes = [_sample_heroes()[1]]  # Акс без personal
         result = format_meta_heroes(heroes, "Оффлейнер")
 
-        assert "Акс" in result
+        assert "Axe" in result
         assert "Личный" not in result
 
     def test_html_tags_present(self):
@@ -621,8 +620,8 @@ class TestShowMetaHeroes:
         msg.answer.assert_called_once()
         call_args = msg.answer.call_args
         text = call_args[0][0]
-        assert "Анти-Маг" in text
-        assert "Акс" in text
+        assert "Anti-Mage" in text
+        assert "Axe" in text
         assert call_args[1].get("parse_mode") == "HTML"
         # Должна быть inline-клавиатура с героями
         assert call_args[1].get("reply_markup") is not None
