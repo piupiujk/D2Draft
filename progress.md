@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-03-15 — LLM: переключение на AgentPlatform.ru (GPT-4o) (DONE)
+
+**Что сделано:**
+- Добавлен новый LLM-провайдер `agentplatform` — OpenAI-совместимый прокси (`https://api.agentplatform.ru/v1`), работает из России без VPN
+- `bot/config.py` — новое поле `AGENT_PLATFORM_API: str = ""`
+- `clients/llm.py` — провайдер `agentplatform` в `_PROVIDER_CONFIG` (модель: gpt-4o), роутинг `complete()`/`vision()` через OpenAI-методы
+- `bot/handlers/draft.py`, `bot/handlers/match.py` — `_create_llm_client()` выбирает ключ `AGENT_PLATFORM_API` при `LLM_PROVIDER=agentplatform`
+- `.env.example` — документация новых переменных
+
+**Конфигурация:** В `.env` установить `LLM_PROVIDER=agentplatform` и `AGENT_PLATFORM_API=<ключ>`.
+
+**Тесты:** `pytest tests/clients/test_llm.py` — 45 тестов passed.
+
+---
+
 ## 2026-03-08 — TASK-030: APScheduler: настройка и джобы (DONE)
 
 **Что сделано:**

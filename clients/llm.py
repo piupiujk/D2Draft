@@ -60,6 +60,12 @@ _PROVIDER_CONFIG: dict[str, dict[str, str]] = {
         "vision_model": "gpt-4o-mini",
         "auth_header": "Bearer",
     },
+    "agentplatform": {
+        "base_url": "https://api.agentplatform.ru/v1",
+        "default_model": "gpt-4o",
+        "vision_model": "gpt-4o",
+        "auth_header": "Bearer",
+    },
     "anthropic": {
         "base_url": "https://api.anthropic.com/v1",
         "default_model": "claude-sonnet-4-20250514",
@@ -144,7 +150,7 @@ class LLMClient:
         self._api_key = api_key
         self._provider = provider.lower()
         if self._provider not in _PROVIDER_CONFIG:
-            msg = f"Неизвестный LLM-провайдер: {provider}. Доступны: openai, anthropic"
+            msg = f"Неизвестный LLM-провайдер: {provider}. Доступны: openai, agentplatform, anthropic"
             raise ValueError(msg)
         self._config = _PROVIDER_CONFIG[self._provider]
         self._external_client = client is not None
@@ -165,7 +171,7 @@ class LLMClient:
         """Текстовый запрос к LLM."""
         model = model or self._config["default_model"]
 
-        if self._provider == "openai":
+        if self._provider in ("openai", "agentplatform"):
             return await self._openai_chat(
                 prompt, system=system, model=model,
                 max_tokens=max_tokens, temperature=temperature,
@@ -188,7 +194,7 @@ class LLMClient:
         """Запрос с изображением (Vision) к LLM."""
         model = model or self._config["vision_model"]
 
-        if self._provider == "openai":
+        if self._provider in ("openai", "agentplatform"):
             return await self._openai_vision(
                 image_bytes, prompt, system=system, model=model,
                 max_tokens=max_tokens, temperature=temperature,

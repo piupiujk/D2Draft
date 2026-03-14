@@ -277,7 +277,9 @@ def _create_llm_client() -> LLMClient:
     """Создать LLM-клиент из конфигурации."""
     from bot.config import settings
 
-    return LLMClient(
-        api_key=settings.LLM_API_KEY,
-        provider=settings.LLM_PROVIDER,
+    api_key = (
+        settings.AGENT_PLATFORM_API
+        if settings.LLM_PROVIDER == "agentplatform"
+        else settings.LLM_API_KEY
     )
+    return LLMClient(api_key=api_key, provider=settings.LLM_PROVIDER)
