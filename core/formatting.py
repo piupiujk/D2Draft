@@ -99,22 +99,38 @@ def format_build(build: HeroBuild) -> str:
         f"🛡 <b>Билд: {build.name_en}</b>",
     ]
 
+    # Мета-информация (protracker)
+    meta_parts: list[str] = []
+    if build.patch:
+        meta_parts.append(f"Патч {build.patch}")
+    if build.position:
+        meta_parts.append(build.position.replace("pos ", "Позиция "))
+    if build.facet:
+        meta_parts.append(f"Фасет: {build.facet}")
+    if meta_parts:
+        lines.append(" | ".join(meta_parts))
+
     if build.guide_winrate > 0:
         header_parts = [f"{build.guide_winrate * 100:.1f}% WR"]
         if build.guide_match_count > 0:
             header_parts.append(f"{build.guide_match_count} матчей")
-        lines.append(f"Гайд: {' | '.join(header_parts)}")
+        lines.append(" | ".join(header_parts))
 
     lines.append("")
 
     # Стартовые предметы
-    if build.starting_items:
+    if build.starting_sets:
+        lines.append("🟢 <b>Стартовые предметы</b>")
+        for i, item_set in enumerate(build.starting_sets[:2], start=1):
+            lines.append(f"  {i}) {', '.join(item_set)}")
+        lines.append("")
+    elif build.starting_items:
         lines.append("🟢 <b>Стартовые предметы</b>")
         items_text = ", ".join(it.name_en for it in build.starting_items)
         lines.append(items_text)
         lines.append("")
 
-    # Ботинки
+    # Ботинки (Stratz fallback)
     if build.boots:
         lines.append("👟 <b>Ботинки</b>")
         boot_parts = []
@@ -124,36 +140,47 @@ def format_build(build: HeroBuild) -> str:
         lines.append(", ".join(boot_parts))
         lines.append("")
 
-    # Основные предметы
+    # Основные предметы (сортировка по времени)
     if build.core_items:
+        sorted_core = sorted(build.core_items, key=lambda x: (x.time or 0))
         lines.append("🔵 <b>Основные предметы</b>")
-        for i, it in enumerate(build.core_items, start=1):
-            pct = f"{it.winrate * 100:.0f}%"
-            mc = f"{it.match_count} матч." if it.match_count > 0 else ""
+        for i, it in enumerate(sorted_core, start=1):
             parts = [f" {i}. {it.name_en}"]
-            if pct:
-                parts.append(pct)
-            if mc:
-                parts.append(mc)
+            if it.purchase_rate > 0:
+                parts.append(f"{it.purchase_rate * 100:.0f}% PR")
+            if it.winrate > 0:
+                parts.append(f"{it.winrate * 100:.0f}% WR")
+            if it.time and it.time > 0:
+                mins = it.time // 60 if it.time > 100 else it.time
+                parts.append(f"~{mins} мин")
             lines.append(" | ".join(parts))
         lines.append("")
 
-    # Ситуативные предметы
+    # Ситуативные предметы (сортировка по времени)
     if build.situational_items:
+        sorted_sit = sorted(build.situational_items, key=lambda x: (x.time or 0))
         lines.append("🟡 <b>Ситуативные предметы</b>")
-        sit_parts = []
-        for it in build.situational_items:
+        for i, it in enumerate(sorted_sit, start=1):
+            parts = [f" {i}. {it.name_en}"]
+            if it.purchase_rate > 0:
+                parts.append(f"{it.purchase_rate * 100:.0f}% PR")
             if it.winrate > 0:
-                sit_parts.append(f"{it.name_en} ({it.winrate * 100:.0f}%)")
-            else:
-                sit_parts.append(it.name_en)
-        lines.append(", ".join(sit_parts))
+                parts.append(f"{it.winrate * 100:.0f}% WR")
+            if it.time and it.time > 0:
+                mins = it.time // 60 if it.time > 100 else it.time
+                parts.append(f"~{mins} мин")
+            lines.append(" | ".join(parts))
         lines.append("")
 
     # Порядок прокачки скиллов
-    if build.skill_order:
+    if build.skill_order_labels:
+        # Protracker: готовые буквы
         lines.append("📘 <b>Прокачка скиллов</b>")
-        # Маппим abilityId → букву (Q/W/E/R) по порядку первого появления
+        skill_str = " → ".join(build.skill_order_labels)
+        lines.append(skill_str)
+        lines.append("")
+    elif build.skill_order:
+        lines.append("📘 <b>Прокачка скиллов</b>")
         ability_id_to_label: dict[int, str] = {}
         labels = ["Q", "W", "E", "R", "D", "F"]
         for s in build.skill_order:
@@ -167,12 +194,21 @@ def format_build(build: HeroBuild) -> str:
     if build.talents:
         lines.append("⭐ <b>Таланты</b>")
         for tc in build.talents:
-            wr = f"{tc.winrate * 100:.1f}%" if tc.winrate > 0 else ""
-            label = f"Ур. {10 + tc.slot * 5}" if tc.slot < 4 else f"Слот {tc.slot}"
-            line = f"  {label}"
-            if wr:
-                line += f" ({wr} WR)"
+            level = tc.level if tc.level else (10 + tc.slot * 5 if tc.slot < 4 else tc.slot)
+            wr_label = f"{tc.winrate * 100:.0f}%" if tc.winrate > 0 else ""
+            name_part = f" — {tc.name}" if tc.name else ""
+            line = f"  Ур. {level}{name_part}"
+            if wr_label:
+                line += f" ({wr_label})"
             lines.append(line)
+        lines.append("")
+
+    # Нейтральные предметы
+    if hasattr(build, "neutral_items") and build.neutral_items:
+        lines.append("🎲 <b>Нейтральные предметы</b>")
+        for tier in sorted(build.neutral_items.keys()):
+            names = build.neutral_items[tier]
+            lines.append(f"  Tier {tier}: {', '.join(names)}")
         lines.append("")
 
     # Контрпики (плохо против)

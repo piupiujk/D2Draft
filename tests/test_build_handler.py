@@ -443,12 +443,12 @@ class TestFormatBuild:
         assert "1." in result
         assert "2." in result
 
-    def test_core_items_with_popularity(self):
-        """Популярность основных предметов (в процентах)."""
+    def test_core_items_with_winrate(self):
+        """Винрейт основных предметов."""
         build = _sample_build()
         result = format_build(build)
-        assert "58%" in result  # Battle Fury winrate/popularity
-        assert "61%" in result  # Manta Style winrate/popularity
+        assert "58% WR" in result  # Battle Fury
+        assert "61% WR" in result  # Manta Style
 
     def test_situational_items_section(self):
         """Секция ситуативных предметов."""
@@ -472,8 +472,8 @@ class TestFormatBuild:
         build = _sample_build()
         result = format_build(build)
         assert "Таланты" in result
-        assert "54.0%" in result
-        assert "57.0%" in result
+        assert "54%" in result
+        assert "57%" in result
 
     def test_html_tags_present(self):
         """Результат содержит HTML-теги."""

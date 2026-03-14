@@ -1299,3 +1299,82 @@
   - TASK-029 (ситуативные билды, medium)
   - TASK-030 (scheduler, medium)
   - TASK-032 (подписки, medium)
+
+---
+
+## 2026-03-08 — TASK-031: Сервис уведомлений (DONE)
+
+Создан `services/notification.py` — `compose_patch_alert()` и `compose_weekly_report()`.
+Интеграция в scheduler jobs.
+
+---
+
+## 2026-03-08 — TASK-033: Логирование: структурированный логгер без PII (DONE)
+
+Создан `core/logging.py` — `JsonFormatter`, `PiiFilter`, `setup_logging()`, `get_logger()`.
+Интеграция во все модули проекта.
+
+---
+
+## 2026-03-08 — TASK-036: Docker: Dockerfile и docker-compose для деплоя (DONE)
+
+Multi-stage `Dockerfile`, `docker-compose.yml` (bot + optional redis), `.dockerignore`.
+**Результат:** pytest — **860 passed, 0 failed**
+
+---
+
+## 2026-03-08 — TASK-037: Кэширование мета-данных: in-memory кэш с TTL (DONE)
+
+Создан `core/cache.py` — `TTLCache` с `meta_cache` (1ч), `build_cache` (1ч), `profile_cache` (10мин).
+Рефакторинг services. Интеграция в `patch_monitor.py`.
+**Результат:** pytest — **860 passed, 0 failed**
+
+---
+
+## 2026-03-08 — TASK-038: Форматирование сообщений (DONE)
+
+Все 5 formatter-функций в `core/formatting.py` используют HTML parse_mode.
+
+---
+
+## 2026-03-08 — TASK-039: Тесты: conftest.py с фикстурами (DONE)
+
+Создан `tests/conftest.py`, исправлены 22 теста Stratz, создан `tests/clients/test_opendota.py` (20 тестов).
+**Результат:** pytest — **807 passed, 0 failed**, покрытие services/ — **91%**
+
+---
+
+## 2026-03-08 — TASK-040: Graceful degradation (DONE)
+
+Верификация и тестирование обработки ошибок API. 10 новых тестов.
+**Результат:** pytest — **836 passed, 0 failed**
+
+---
+
+## 2026-03-14 — Protracker: парсинг билдов с dota2protracker.com (DONE)
+
+**Причина:** Stratz API давал некачественные данные для билдов — cheap utility предметы доминировали, удалённые предметы попадали в выдачу. Решено парсить dota2protracker.com — данные от про-игроков.
+
+**Что сделано:**
+
+1. **Создан `clients/protracker.py`** — async-клиент:
+   - Парсинг SvelteKit SSR данных из HTML (regex + JS→JSON конвертация)
+   - Обход Cloudflare через `curl_cffi` с `impersonate='chrome'`
+   - Парсинг: anchor_items, items_mid_late, starting_items_new, abilities_new, talents, neutral_stats
+   - Маппинг item_id → name через protracker `itemsMapping`
+
+2. **Обновлён `services/build.py`**:
+   - Protracker как PRIMARY источник, Stratz как fallback
+   - Новые поля `HeroBuild`: `patch`, `position`, `facet`, `source`, `skill_order_labels`, `starting_sets`, `neutral_items`
+   - Новые поля `BuildItem`: `purchase_rate`; `TalentChoice`: `name`, `level`
+   - Core items: anchor_items + mid_late до 8 штук (без дубликатов)
+
+3. **Обновлён `core/formatting.py`**:
+   - Мета-инфо: патч, позиция, фасет
+   - Предметы: сортировка по времени, PR% + WR% + время
+   - Таланты: имя + уровень + pick rate
+   - Нейтральные предметы по тирам
+
+4. **Обновлены тесты**: мок protracker в test_build.py и test_build_handler.py
+
+**Результат:** ruff check — 0 ошибок, Docker build+deploy успешен
