@@ -8,3 +8,6 @@ class DraftStates(StatesGroup):
 
     waiting_screenshot = State()
     confirming_heroes = State()
+    editing_side = State()
+    editing_hero = State()
+    adding_hero = State()

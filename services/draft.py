@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from clients.llm import DraftRecognition, LLMClient, PickRecommendation
 from clients.opendota import OpenDotaClient, PlayerHeroStats
+from clients.protracker import ProMetaHero, ProtrackerClient, ProtrackerError
 from clients.stratz import StratzClient
 from core.constants import HERO_BY_ID
 from core.enums import RankBracket, Role
@@ -85,7 +86,7 @@ def _validate_recognition(recognition: DraftRecognition) -> ValidatedDraft:
         if hid in HERO_BY_ID:
             result.allies.append(hid)
             hero = get_hero_by_id(hid)
-            result.allies_names.append(hero.name_ru)
+            result.allies_names.append(hero.name_en)
         else:
             invalid_ids.append(hid)
 
@@ -94,7 +95,7 @@ def _validate_recognition(recognition: DraftRecognition) -> ValidatedDraft:
         if hid in HERO_BY_ID:
             result.enemies.append(hid)
             hero = get_hero_by_id(hid)
-            result.enemies_names.append(hero.name_ru)
+            result.enemies_names.append(hero.name_en)
         else:
             invalid_ids.append(hid)
 
@@ -128,9 +129,9 @@ def _validate_recognition(recognition: DraftRecognition) -> ValidatedDraft:
 # ---------------------------------------------------------------------------
 
 # Веса для расчёта score кандидата
-_W_COUNTER = 0.35  # контрпик вражеского состава
-_W_SYNERGY = 0.25  # синергия с союзниками
-_W_META = 0.25     # мета-винрейт
+_W_META = 0.45     # мета-винрейт на позиции (главный фактор)
+_W_COUNTER = 0.25  # контрпик вражеского состава
+_W_SYNERGY = 0.15  # синергия с союзниками
 _W_PERSONAL = 0.15  # личный винрейт
 
 # Количество рекомендаций
@@ -173,6 +174,7 @@ async def recommend_picks(
     opendota: OpenDotaClient | None = None,
     llm_client: LLMClient | None = None,
     account_id: int | None = None,
+    mmr: int = 0,
 ) -> list[PickRecommendation]:
     """Рекомендовать 3-5 героев на основе текущего драфта.
 
@@ -195,9 +197,19 @@ async def recommend_picks(
         stratz.get_hero_matchups(eid, bracket=rank) for eid in enemies
     ]
 
-    meta_task = get_meta_heroes(
-        role, rank, stratz=stratz, top_n=30,
-    )
+    # Protracker мета (с fallback на Stratz)
+    async def _fetch_protracker_meta() -> list[ProMetaHero] | None:
+        protracker = ProtrackerClient()
+        try:
+            return await protracker.get_meta_heroes(position=int(role), mmr=mmr)
+        except ProtrackerError:
+            logger.warning("Protracker meta недоступен, fallback на Stratz", exc_info=True)
+            return None
+        except Exception:
+            logger.warning("Protracker meta: неожиданная ошибка", exc_info=True)
+            return None
+        finally:
+            protracker.close()
 
     personal_task: asyncio.Task[list[PlayerHeroStats]] | None = None
     if opendota is not None and account_id is not None:
@@ -205,11 +217,21 @@ async def recommend_picks(
             opendota.get_player_heroes(account_id)
         )
 
-    # Запускаем matchup-запросы и мета параллельно
-    matchup_results_raw, meta_heroes = await asyncio.gather(
+    # Запускаем matchup-запросы и protracker мету параллельно
+    matchup_results_raw, pro_meta = await asyncio.gather(
         asyncio.gather(*matchup_tasks, return_exceptions=True),
-        meta_task,
+        _fetch_protracker_meta(),
     )
+
+    # Если protracker недоступен — fallback на Stratz
+    if pro_meta:
+        meta_heroes = [
+            type("_Meta", (), {"hero_id": m.hero_id, "winrate": m.winrate})()
+            for m in pro_meta
+        ]
+    else:
+        logger.info("Используем Stratz мету как fallback")
+        meta_heroes = await get_meta_heroes(role, rank, stratz=stratz, top_n=30)
 
     personal_stats: list[PlayerHeroStats] = []
     if personal_task is not None:
@@ -265,17 +287,13 @@ async def recommend_picks(
     synergy_min = min(synergy_vals) if synergy_vals else 0.0
     synergy_range = synergy_max - synergy_min if synergy_max != synergy_min else 1.0
 
-    # Собираем кандидатов — из мета + из контрпиков
+    # Кандидаты — ТОЛЬКО герои из мета-пула для выбранной позиции.
+    # Контрпики и синергии используются для ранжирования внутри пула,
+    # а не для добавления кандидатов с других позиций.
     candidate_ids = set()
     for m in meta_heroes:
         if m.hero_id not in picked:
             candidate_ids.add(m.hero_id)
-    for hid in counter_map:
-        if hid in HERO_BY_ID:
-            candidate_ids.add(hid)
-    for hid in synergy_map:
-        if hid in HERO_BY_ID:
-            candidate_ids.add(hid)
 
     candidates: list[_Candidate] = []
     for hid in candidate_ids:
@@ -332,10 +350,10 @@ async def _enrich_with_llm(
 ) -> list[PickRecommendation]:
     """Генерировать рекомендации с пояснениями от LLM."""
     allies_names = [
-        get_hero_by_id(hid).name_ru for hid in allies if hid in HERO_BY_ID
+        get_hero_by_id(hid).name_en for hid in allies if hid in HERO_BY_ID
     ]
     enemies_names = [
-        get_hero_by_id(hid).name_ru for hid in enemies if hid in HERO_BY_ID
+        get_hero_by_id(hid).name_en for hid in enemies if hid in HERO_BY_ID
     ]
 
     draft_context = {
@@ -346,7 +364,7 @@ async def _enrich_with_llm(
         "meta_heroes": [
             {
                 "hero_id": c.hero_id,
-                "name_ru": c.name_ru,
+                "name": c.name_en,
                 "meta_winrate": round(c.meta_winrate * 100, 1),
                 "personal_winrate": (
                     round(c.personal_winrate * 100, 1)
@@ -370,7 +388,7 @@ async def _enrich_with_llm(
         llm_rec = llm_map.get(c.hero_id)
         result.append(PickRecommendation(
             hero_id=c.hero_id,
-            name_ru=c.name_ru,
+            name_ru=c.name_en,
             reason=llm_rec.reason if llm_rec else _basic_reason(c),
         ))
 
@@ -384,7 +402,7 @@ def _build_basic_recommendations(
     return [
         PickRecommendation(
             hero_id=c.hero_id,
-            name_ru=c.name_ru,
+            name_ru=c.name_en,
             reason=_basic_reason(c),
         )
         for c in candidates

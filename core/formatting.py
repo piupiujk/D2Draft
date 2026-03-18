@@ -284,7 +284,7 @@ def format_match_analysis(analysis: MatchAnalysis) -> str:
         f"⚔️ <b>Разбор матча #{analysis.match_id}</b>",
         "",
         f"{emoji} <b>{result_text}</b> | {duration_str}",
-        f"🦸 <b>{analysis.hero_name_ru}</b> ({analysis.hero_name_en})",
+        f"🦸 <b>{analysis.hero_name_en}</b>",
         f"🎯 Роль: {role_label}",
         f"📊 KDA: <b>{analysis.kills}/{analysis.deaths}/{analysis.assists}</b>",
     ]
@@ -453,11 +453,19 @@ def format_profile(profile: UserProfile) -> str:
 # ---------------------------------------------------------------------------
 
 
-def format_draft_recommendations(recommendations: list[PickRecommendation]) -> str:
+def format_draft_recommendations(
+    recommendations: list[PickRecommendation],
+    allies_names: list[str] | None = None,
+    enemies_names: list[str] | None = None,
+    role_label: str | None = None,
+) -> str:
     """Форматировать рекомендации пиков для Telegram-сообщения.
 
     Args:
         recommendations: список PickRecommendation из clients/llm.py.
+        allies_names: имена союзных героев (для отображения в шапке).
+        enemies_names: имена вражеских героев (для отображения в шапке).
+        role_label: название позиции на русском (для отображения в шапке).
 
     Returns:
         Строка с HTML-разметкой, длина <= 4096 символов.
@@ -465,10 +473,23 @@ def format_draft_recommendations(recommendations: list[PickRecommendation]) -> s
     if not recommendations:
         return "Нет рекомендаций по пикам."
 
-    lines: list[str] = ["🎯 <b>Рекомендации пиков</b>", ""]
+    lines: list[str] = []
+
+    # Блок распознанных героев
+    if allies_names:
+        lines.append(f"🟢 <b>Союзники:</b> {', '.join(allies_names)}")
+    if enemies_names:
+        lines.append(f"🔴 <b>Противники:</b> {', '.join(enemies_names)}")
+    if role_label:
+        lines.append(f"🎮 <b>Позиция:</b> {role_label}")
+    if allies_names or enemies_names or role_label:
+        lines.append("")
+
+    lines.append("🎯 <b>Рекомендации пиков</b>")
+    lines.append("")
 
     for i, rec in enumerate(recommendations, start=1):
-        lines.append(f"<b>{i}. {rec.name_ru}</b>")
+        lines.append(f"<b>{i}. {rec.name_ru}</b>")  # name_ru now contains English name
         if rec.reason:
             lines.append(f"   {rec.reason}")
         lines.append("")

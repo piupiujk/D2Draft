@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-03-15 — Мета-герои для драфта из dota2protracker.com вместо Stratz (DONE)
+
+**Что сделано:**
+- `clients/protracker.py` — добавлен `ProMetaHero` dataclass и метод `get_meta_heroes(position, mmr, period)`:
+  - Загружает `/meta?mmr={mmr}&position=pos%2B{pos}&period=8` с protracker
+  - Парсит SvelteKit data через `_extract_meta_data()` (мета-страница: `data[1]` вместо `data[2]`)
+  - `_parse_meta_heroes()` — агрегирует hero_variant/фасеты по `hero_id` (суммирует wins/matches)
+  - `_mmr_to_protracker()` — округляет MMR к ближайшему тиру (0/2000/4000/5000/6000/7000/8000)
+  - Результат отсортирован по winrate убывание
+- `services/draft.py` — `recommend_picks()` теперь использует protracker мету:
+  - Добавлен параметр `mmr: int = 0`
+  - Protracker запрашивается параллельно с matchup-данными
+  - Fallback на Stratz `get_meta_heroes()` при ошибке protracker
+- `bot/handlers/draft.py` — передаёт `mmr=mmr` в `recommend_picks()`
+
+**Зачем:** Protracker даёт более точные мета-данные с meta_score, contest_rate и статистикой про-игроков.
+
+---
+
 ## 2026-03-15 — LLM: переключение на AgentPlatform.ru (GPT-4o) (DONE)
 
 **Что сделано:**

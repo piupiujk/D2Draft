@@ -28,6 +28,18 @@ _USER_AGENT = (
 
 
 @dataclass
+class ProMetaHero:
+    """Герой из мета-списка protracker."""
+
+    hero_id: int
+    matches: int
+    wins: int
+    winrate: float  # wins / matches (0.0 — 1.0)
+    contest_rate: float  # пикрейт (0.0 — 1.0)
+    meta_score: float  # из detailed_stats
+
+
+@dataclass
 class ProItemBuild:
     """Предмет из билда protracker."""
 
@@ -71,11 +83,64 @@ class ProBuildData:
 # ---------------------------------------------------------------------------
 
 
+# Допустимые значения MMR для protracker
+_PROTRACKER_MMR_TIERS = [0, 2000, 4000, 5000, 6000, 7000, 8000]
+
+
+def _mmr_to_protracker(mmr: int) -> int:
+    """Округлить MMR к ближайшему значению protracker."""
+    if mmr <= 0:
+        return 0
+    best = _PROTRACKER_MMR_TIERS[0]
+    for tier in _PROTRACKER_MMR_TIERS:
+        if abs(tier - mmr) < abs(best - mmr):
+            best = tier
+    return best
+
+
 class ProtrackerClient:
     """Парсер dota2protracker.com для получения билдов героев."""
 
     def __init__(self) -> None:
         self._session = cffi_requests.Session(impersonate="chrome")
+
+    async def get_meta_heroes(
+        self,
+        position: int,
+        mmr: int = 0,
+        period: int = 8,
+    ) -> list[ProMetaHero]:
+        """Получить мета-героев с protracker для позиции и MMR.
+
+        Args:
+            position: Позиция 1-5.
+            mmr: MMR игрока (будет округлён к ближайшему тиру protracker).
+            period: Период в днях (по умолчанию 8).
+
+        Returns:
+            Список ProMetaHero, отсортированный по winrate убывание.
+        """
+        pt_mmr = _mmr_to_protracker(mmr)
+        url = (
+            f"{_BASE_URL}/meta"
+            f"?mmr={pt_mmr}&position=pos%2B{position}&period={period}"
+        )
+        logger.info("Protracker meta: загрузка %s", url)
+
+        try:
+            resp = await asyncio.to_thread(
+                self._session.get,
+                url,
+                timeout=15,
+            )
+        except Exception as exc:
+            raise ProtrackerError(f"Ошибка загрузки мета: {exc}") from exc
+
+        if resp.status_code != 200:
+            raise ProtrackerError(f"Protracker meta вернул HTTP {resp.status_code}")
+
+        raw_data = _extract_meta_data(resp.text)
+        return _parse_meta_heroes(raw_data)
 
     async def get_hero_build(self, hero_name: str) -> ProBuildData:
         """Получить билд героя по имени (English).
@@ -133,6 +198,103 @@ _DATA_RE_ALT = re.compile(
     r"data:\s*(\[\s*\{.*?\}\s*(?:,\s*(?:null|\{.*?\})\s*)*\])\s*,\s*form",
     re.DOTALL,
 )
+
+
+def _extract_meta_data(html: str) -> list[dict[str, Any]]:
+    """Извлечь мета-данные из SvelteKit bootstrap-скрипта страницы /meta.
+
+    На странице /meta структура: data[0] = глобальные, data[1] = мета-данные.
+    """
+    match = _DATA_RE.search(html)
+    if not match:
+        match = _DATA_RE_ALT.search(html)
+    if not match:
+        raise ProtrackerError("Не удалось найти SvelteKit данные в HTML (meta)")
+
+    raw = match.group(1)
+    json_str = _js_to_json(raw)
+
+    try:
+        data_array = json.loads(json_str)
+    except json.JSONDecodeError as exc:
+        raise ProtrackerError(f"Ошибка парсинга JSON (meta): {exc}") from exc
+
+    if not isinstance(data_array, list) or len(data_array) < 2:
+        raise ProtrackerError(
+            f"Неожиданный формат данных meta: {len(data_array)} элементов"
+        )
+
+    # data[1] содержит мета-данные
+    meta_entry = data_array[1]
+    if not isinstance(meta_entry, dict):
+        raise ProtrackerError("Мета-данные отсутствуют в ответе")
+
+    meta_data = meta_entry.get("data", meta_entry)
+    meta_list = meta_data.get("meta", [])
+
+    if not isinstance(meta_list, list):
+        raise ProtrackerError("Поле 'meta' не является списком")
+
+    return meta_list
+
+
+def _parse_meta_heroes(meta_list: list[dict[str, Any]]) -> list[ProMetaHero]:
+    """Парсить и агрегировать мета-героев (суммируя варианты/фасеты)."""
+    # Агрегация по hero_id (суммируем wins/matches через все hero_variant)
+    agg: dict[int, dict[str, float]] = {}
+
+    for entry in meta_list:
+        if not isinstance(entry, dict):
+            continue
+
+        hero_id = entry.get("hero_id")
+        if hero_id is None:
+            continue
+        hero_id = int(hero_id)
+
+        matches = int(entry.get("matches", 0) or 0)
+        wins = int(entry.get("wins", 0) or 0)
+        contest_rate = _to_float(entry.get("contest_rate", 0))
+
+        detailed = entry.get("detailed_stats") or {}
+        meta_score = _to_float(detailed.get("meta_score", 0))
+
+        if hero_id not in agg:
+            agg[hero_id] = {
+                "matches": 0,
+                "wins": 0,
+                "contest_rate": contest_rate,
+                "meta_score": meta_score,
+            }
+
+        agg[hero_id]["matches"] += matches
+        agg[hero_id]["wins"] += wins
+        # Берём максимальный contest_rate и meta_score среди вариантов
+        if contest_rate > agg[hero_id]["contest_rate"]:
+            agg[hero_id]["contest_rate"] = contest_rate
+        if meta_score > agg[hero_id]["meta_score"]:
+            agg[hero_id]["meta_score"] = meta_score
+
+    result: list[ProMetaHero] = []
+    for hero_id, data in agg.items():
+        matches = int(data["matches"])
+        wins = int(data["wins"])
+        winrate = wins / matches if matches > 0 else 0.0
+
+        result.append(
+            ProMetaHero(
+                hero_id=hero_id,
+                matches=matches,
+                wins=wins,
+                winrate=winrate,
+                contest_rate=data["contest_rate"],
+                meta_score=data["meta_score"],
+            )
+        )
+
+    # Сортируем по winrate убывание
+    result.sort(key=lambda h: h.winrate, reverse=True)
+    return result
 
 
 def _extract_sveltekit_data(html: str) -> dict[str, Any]:

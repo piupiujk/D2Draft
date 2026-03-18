@@ -70,6 +70,16 @@ _CB_CONFIRM_DRAFT = "draft:confirm"
 _CB_RETRY_DRAFT = "draft:retry"
 _CB_DRAFT_PICK = "draft_pick:"
 
+# Callback-префиксы для редактирования драфта
+_CB_EDIT_DRAFT = "draft:edit"
+_CB_EDIT_SIDE = "draft:side:"
+_CB_REMOVE_HERO = "draft:rm:"
+_CB_ADD_HERO_START = "draft:add:"
+_CB_RECALC = "draft:recalc"
+_CB_EDIT_BACK = "draft:edit_back"
+_CB_CHANGE_ROLE = "draft:chrole"
+_CB_SET_ROLE = "draft:setrole:"
+
 
 # ---------------------------------------------------------------------------
 # /draft — точка входа
@@ -210,7 +220,8 @@ async def process_screenshot(
         await state.set_state(DraftStates.confirming_heroes)
     else:
         # Высокая уверенность — сразу к рекомендациям
-        await loading_msg.edit_text(text, parse_mode="HTML")
+        # DEBUG: отправляем распознанный драфт отдельным сообщением (не перезапишется)
+        await message.answer(text, parse_mode="HTML")
         await _show_recommendations(message, state, user, loading_msg)
 
 
@@ -354,6 +365,7 @@ async def _show_recommendations(
                     opendota=opendota,
                     llm_client=llm,
                     account_id=account_id,
+                    mmr=mmr,
                 )
             finally:
                 if opendota is not None:
@@ -391,10 +403,27 @@ async def _show_recommendations(
     # Сохраняем enemies в state для ситуативного билда при выборе героя
     await state.update_data(enemies_for_build=enemies)
 
-    # Формируем вывод
+    # Формируем вывод с именами героев
     from core.formatting import format_draft_recommendations
+    from core.hero_mapping import get_hero_by_id
 
-    text = format_draft_recommendations(recommendations)
+    allies_names = []
+    for hid in allies:
+        try:
+            allies_names.append(get_hero_by_id(hid).name_en)
+        except Exception:
+            allies_names.append(f"#{hid}")
+
+    enemies_names = []
+    for hid in enemies:
+        try:
+            enemies_names.append(get_hero_by_id(hid).name_en)
+        except Exception:
+            enemies_names.append(f"#{hid}")
+
+    text = format_draft_recommendations(
+        recommendations, allies_names, enemies_names, role_label=role.label_ru,
+    )
     kb = _recommendations_keyboard(recommendations)
     await progress_msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
 
@@ -417,6 +446,11 @@ def _format_recognition(draft: ValidatedDraft) -> str:
     if draft.needs_confirmation:
         lines.append("\n⚠️ Проверь, правильно ли распознаны герои.")
 
+    # DEBUG: raw LLM response
+    if draft.raw_response:
+        raw = draft.raw_response[:500]
+        lines.append(f"\n🛠 <b>DEBUG LLM:</b> <code>{raw}</code>")
+
     return "\n".join(lines)
 
 
@@ -428,11 +462,347 @@ def _recommendations_keyboard(recommendations: list) -> InlineKeyboardMarkup:
     for rec in recommendations:
         rows.append([
             InlineKeyboardButton(
-                text=f"🛡 Билд: {rec.name_ru}",
+                text=f"🛡 Build: {rec.name_ru}",
                 callback_data=f"{_CB_DRAFT_PICK}{rec.hero_id}",
             )
         ])
+    # Кнопки редактирования
+    rows.append([
+        InlineKeyboardButton(
+            text="✏️ Изменить героев",
+            callback_data=_CB_EDIT_DRAFT,
+        ),
+        InlineKeyboardButton(
+            text="🎮 Изменить позицию",
+            callback_data=_CB_CHANGE_ROLE,
+        ),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ---------------------------------------------------------------------------
+# Callback: редактирование драфта
+# ---------------------------------------------------------------------------
+
+
+def _hero_names_for_ids(hero_ids: list[int]) -> list[str]:
+    """Получить английские имена героев по списку ID."""
+    from core.hero_mapping import get_hero_by_id
+
+    names = []
+    for hid in hero_ids:
+        try:
+            names.append(get_hero_by_id(hid).name_en)
+        except Exception:
+            names.append(f"#{hid}")
+    return names
+
+
+def _edit_sides_keyboard(allies: list[int], enemies: list[int]) -> InlineKeyboardMarkup:
+    """Клавиатура выбора стороны для редактирования."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🟢 Союзники ({len(allies)})",
+                    callback_data=f"{_CB_EDIT_SIDE}allies",
+                ),
+                InlineKeyboardButton(
+                    text=f"🔴 Противники ({len(enemies)})",
+                    callback_data=f"{_CB_EDIT_SIDE}enemies",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ Готово — пересчитать",
+                    callback_data=_CB_RECALC,
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="« Назад", callback_data=_CB_EDIT_BACK),
+            ],
+        ]
+    )
+
+
+def _edit_heroes_keyboard(
+    side: str, hero_ids: list[int], hero_names: list[str],
+) -> InlineKeyboardMarkup:
+    """Клавиатура списка героев стороны с кнопками удаления и добавления."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for hid, name in zip(hero_ids, hero_names):
+        rows.append([
+            InlineKeyboardButton(
+                text=f"❌ {name}",
+                callback_data=f"{_CB_REMOVE_HERO}{side}:{hid}",
+            )
+        ])
+    if len(hero_ids) < 5:
+        rows.append([
+            InlineKeyboardButton(
+                text="➕ Добавить героя",
+                callback_data=f"{_CB_ADD_HERO_START}{side}",
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(text="« Назад", callback_data=_CB_EDIT_DRAFT),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _side_label(side: str) -> str:
+    return "Союзники" if side == "allies" else "Противники"
+
+
+@router.callback_query(F.data == _CB_EDIT_DRAFT)
+async def edit_draft(
+    callback: CallbackQuery,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Показать выбор стороны для редактирования."""
+    await callback.answer()
+    data = await state.get_data()
+    allies = data.get("allies", [])
+    enemies = data.get("enemies", [])
+
+    allies_names = _hero_names_for_ids(allies)
+    enemies_names = _hero_names_for_ids(enemies)
+
+    text = (
+        "✏️ <b>Редактирование драфта</b>\n\n"
+        f"🟢 <b>Союзники:</b> {', '.join(allies_names) or '—'}\n"
+        f"🔴 <b>Противники:</b> {', '.join(enemies_names) or '—'}\n\n"
+        "Выбери сторону для редактирования:"
+    )
+    kb = _edit_sides_keyboard(allies, enemies)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    await state.set_state(DraftStates.editing_side)
+
+
+@router.callback_query(F.data.startswith(_CB_EDIT_SIDE))
+async def edit_side(
+    callback: CallbackQuery,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Показать героев выбранной стороны с кнопками удаления."""
+    side = callback.data[len(_CB_EDIT_SIDE):]
+    if side not in ("allies", "enemies"):
+        await callback.answer("Некорректный выбор.")
+        return
+
+    await callback.answer()
+    data = await state.get_data()
+    hero_ids = data.get(side, [])
+    hero_names = _hero_names_for_ids(hero_ids)
+
+    label = _side_label(side)
+    text = f"✏️ <b>{label}</b>\n\nНажми на героя, чтобы удалить:"
+    kb = _edit_heroes_keyboard(side, hero_ids, hero_names)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    await state.set_state(DraftStates.editing_hero)
+
+
+@router.callback_query(F.data.startswith(_CB_REMOVE_HERO))
+async def remove_hero(
+    callback: CallbackQuery,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Удалить героя из стороны драфта."""
+    payload = callback.data[len(_CB_REMOVE_HERO):]
+    try:
+        side, hero_id_str = payload.split(":")
+        hero_id = int(hero_id_str)
+    except (ValueError, IndexError):
+        await callback.answer("Некорректные данные.")
+        return
+
+    if side not in ("allies", "enemies"):
+        await callback.answer("Некорректный выбор.")
+        return
+
+    data = await state.get_data()
+    hero_ids: list[int] = list(data.get(side, []))
+    if hero_id in hero_ids:
+        hero_ids.remove(hero_id)
+        await state.update_data(**{side: hero_ids, "draft_edited": True})
+
+    await callback.answer("Герой удалён")
+
+    # Обновляем сообщение — показываем обновлённый список стороны
+    hero_names = _hero_names_for_ids(hero_ids)
+    label = _side_label(side)
+    text = f"✏️ <b>{label}</b>\n\nНажми на героя, чтобы удалить:"
+    kb = _edit_heroes_keyboard(side, hero_ids, hero_names)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith(_CB_ADD_HERO_START))
+async def add_hero_start(
+    callback: CallbackQuery,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Попросить пользователя ввести имя героя для добавления."""
+    side = callback.data[len(_CB_ADD_HERO_START):]
+    if side not in ("allies", "enemies"):
+        await callback.answer("Некорректный выбор.")
+        return
+
+    await callback.answer()
+    await state.update_data(adding_side=side)
+
+    label = _side_label(side)
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="« Отмена", callback_data=f"{_CB_EDIT_SIDE}{side}")]
+        ]
+    )
+    await callback.message.edit_text(
+        f"➕ <b>Добавить героя ({label})</b>\n\n"
+        "Напиши имя героя в чат (EN/RU/сокращение):",
+        parse_mode="HTML",
+        reply_markup=cancel_kb,
+    )
+    await state.set_state(DraftStates.adding_hero)
+
+
+@router.message(DraftStates.adding_hero, F.text)
+async def add_hero_by_name(
+    message: Message,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Обработка текстового ввода имени героя для добавления."""
+    from core.exceptions import HeroNotFound
+    from core.hero_mapping import find_hero
+
+    data = await state.get_data()
+    side = data.get("adding_side", "allies")
+
+    query = message.text.strip()
+    try:
+        hero = find_hero(query)
+    except HeroNotFound:
+        await message.answer(
+            f"Герой «{query}» не найден. Попробуй ещё раз или напиши /draft для отмены."
+        )
+        return
+
+    hero_ids: list[int] = list(data.get(side, []))
+    if len(hero_ids) >= 5:
+        await message.answer("Максимум 5 героев на стороне.")
+        return
+    if hero.hero_id in hero_ids:
+        await message.answer(f"{hero.name_en} уже в списке. Введи другого героя.")
+        return
+
+    hero_ids.append(hero.hero_id)
+    await state.update_data(**{side: hero_ids, "draft_edited": True})
+
+    # Показываем обновлённый список стороны
+    hero_names = _hero_names_for_ids(hero_ids)
+    label = _side_label(side)
+    text = (
+        f"✅ <b>{hero.name_en}</b> добавлен\n\n"
+        f"✏️ <b>{label}</b>\n\nНажми на героя, чтобы удалить:"
+    )
+    kb = _edit_heroes_keyboard(side, hero_ids, hero_names)
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+    await state.set_state(DraftStates.editing_hero)
+
+
+@router.callback_query(F.data == _CB_CHANGE_ROLE)
+async def change_role(
+    callback: CallbackQuery,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Показать кнопки выбора позиции."""
+    await callback.answer()
+    data = await state.get_data()
+    current_role = data.get("user_role") or 1
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for role in Role:
+        marker = "• " if role.value == current_role else ""
+        rows.append([
+            InlineKeyboardButton(
+                text=f"{marker}{role.value} — {role.label_ru}",
+                callback_data=f"{_CB_SET_ROLE}{role.value}",
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(text="« Назад", callback_data=_CB_EDIT_BACK),
+    ])
+
+    await callback.message.edit_text(
+        "🎮 <b>Выбери позицию для рекомендаций:</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
+@router.callback_query(F.data.startswith(_CB_SET_ROLE))
+async def set_role(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: dict[str, Any] | None = None,
+    **_kwargs: Any,
+) -> None:
+    """Установить позицию и пересчитать рекомендации."""
+    if user is None:
+        await callback.answer(_NOT_REGISTERED_TEXT, show_alert=True)
+        return
+
+    try:
+        role_val = int(callback.data[len(_CB_SET_ROLE):])
+        Role(role_val)
+    except (ValueError, TypeError):
+        await callback.answer("Некорректная позиция.")
+        return
+
+    await callback.answer()
+    await state.update_data(user_role=role_val, draft_edited=True)
+    await _show_recommendations(callback.message, state, user)
+
+
+@router.callback_query(F.data == _CB_EDIT_BACK)
+async def edit_back(
+    callback: CallbackQuery,
+    state: FSMContext,
+    **_kwargs: Any,
+) -> None:
+    """Вернуться из редактирования к рекомендациям (без пересчёта)."""
+    await callback.answer()
+    await callback.message.edit_text(
+        "Редактирование отменено. Используй /draft для нового анализа."
+    )
+    await state.clear()
+
+
+@router.callback_query(F.data == _CB_RECALC)
+async def recalc_draft(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: dict[str, Any] | None = None,
+    is_premium: bool = False,
+    **_kwargs: Any,
+) -> None:
+    """Пересчитать рекомендации после редактирования драфта."""
+    if user is None:
+        await callback.answer(_NOT_REGISTERED_TEXT, show_alert=True)
+        return
+
+    await callback.answer()
+    await _show_recommendations(callback.message, state, user)
+
+
+# ---------------------------------------------------------------------------
+# Вспомогательные: показ билда
+# ---------------------------------------------------------------------------
 
 
 async def _show_hero_build(
