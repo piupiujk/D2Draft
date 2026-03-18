@@ -82,7 +82,7 @@ def compose_weekly_report(user: dict[str, Any], profile: UserProfile) -> str:
         best = profile.top_heroes[0]
         best_wr = best.winrate * 100
         lines.append(
-            f"⭐ Лучший герой: <b>{best.name_ru}</b>"
+            f"⭐ Лучший герой: <b>{best.name_en}</b>"
             f" — {best.games} игр, {best_wr:.0f}% WR"
         )
 
@@ -96,7 +96,7 @@ def compose_weekly_report(user: dict[str, Any], profile: UserProfile) -> str:
         if worst and worst.hero_id != profile.top_heroes[0].hero_id:
             worst_wr = worst.winrate * 100
             lines.append(
-                f"⚠️ Слабый герой: <b>{worst.name_ru}</b>"
+                f"⚠️ Слабый герой: <b>{worst.name_en}</b>"
                 f" — {worst.games} игр, {worst_wr:.0f}% WR"
             )
 
@@ -105,7 +105,7 @@ def compose_weekly_report(user: dict[str, Any], profile: UserProfile) -> str:
         lines.append("\n<b>Топ герои:</b>")
         for i, hero in enumerate(profile.top_heroes[:3], 1):
             wr = hero.winrate * 100
-            lines.append(f"  {i}. {hero.name_ru} — {hero.games} игр, {wr:.0f}% WR")
+            lines.append(f"  {i}. {hero.name_en} — {hero.games} игр, {wr:.0f}% WR")
 
     # Серии
     if profile.win_streak >= 3:

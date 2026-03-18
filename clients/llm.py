@@ -63,7 +63,7 @@ _PROVIDER_CONFIG: dict[str, dict[str, str]] = {
     "agentplatform": {
         "base_url": "https://api.agentplatform.ru/v1",
         "default_model": "gpt-4o",
-        "vision_model": "gpt-4o",
+        "vision_model": "google/gemini-3.1-pro-preview",
         "auth_header": "Bearer",
     },
     "anthropic": {
@@ -189,7 +189,7 @@ class LLMClient:
         system: str = "",
         model: str | None = None,
         max_tokens: int = 2048,
-        temperature: float = 0.3,
+        temperature: float = 0.1,
     ) -> LLMResponse:
         """Запрос с изображением (Vision) к LLM."""
         model = model or self._config["vision_model"]
@@ -316,7 +316,7 @@ class LLMClient:
             "content": [
                 {
                     "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{b64}"},
+                    "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"},
                 },
                 {"type": "text", "text": prompt},
             ],

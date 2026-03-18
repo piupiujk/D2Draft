@@ -216,7 +216,7 @@ async def _show_meta_heroes(
     text = format_meta_heroes(heroes, role.label_ru, bracket_label=bracket.value)
 
     # Генерируем inline-кнопки героев для перехода к билду
-    hero_buttons = [HeroButton(hero_id=h.hero_id, name=h.name_ru) for h in heroes]
+    hero_buttons = [HeroButton(hero_id=h.hero_id, name=h.name_en) for h in heroes]
     kb = hero_list_kb(hero_buttons) if hero_buttons else None
 
     await message.answer(text, reply_markup=kb, parse_mode="HTML")

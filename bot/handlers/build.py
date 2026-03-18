@@ -150,7 +150,7 @@ async def process_hero_callback(
         await callback.message.answer("Герой не найден.")
         return
 
-    await _show_build(callback.message, user, hero_id, hero_data.name_ru)
+    await _show_build(callback.message, user, hero_id, hero_data.name_en)
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ async def _resolve_and_show_build(
         return
 
     await state.clear()
-    await _show_build(message, user, hero_data.hero_id, hero_data.name_ru)
+    await _show_build(message, user, hero_data.hero_id, hero_data.name_en)
 
 
 async def _show_build(
